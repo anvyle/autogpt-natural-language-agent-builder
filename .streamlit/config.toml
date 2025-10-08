@@ -1,0 +1,21 @@
+# Streamlit Configuration File
+
+[server]
+# Enable file watching for auto-reload (development)
+fileWatcherType = "auto"
+
+# Max upload size (MB) - adjust based on your needs
+maxUploadSize = 200
+
+[theme]
+# Customize your app theme (optional)
+# primaryColor = "#FF4B4B"
+# backgroundColor = "#FFFFFF"
+# secondaryBackgroundColor = "#F0F2F6"
+# textColor = "#262730"
+# font = "sans serif"
+
+[browser]
+# Show warning when running in development mode
+gatherUsageStats = false
+

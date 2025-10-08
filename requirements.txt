@@ -1,0 +1,9 @@
+streamlit
+langchain
+langchain-google-genai
+langchain-chroma
+pydantic
+python-dotenv
+aiofiles
+langsmith
+
