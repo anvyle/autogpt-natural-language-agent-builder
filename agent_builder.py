@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain.messages import HumanMessage, SystemMessage
 from utils import load_json_async, AgentFixer, AgentValidator
 
 # Import centralized config for secrets management
@@ -1020,6 +1020,184 @@ INCREMENTAL_AGENT_UPDATE_HUMAN_PROMPT_TEMPLATE = """
 {updated_instructions}
 """
 
+TEMPLATE_MODIFICATION_SYSTEM_PROMPT_TEMPLATE = """
+You are an expert AutoGPT Template Modifier. Your task is to analyze an existing agent template and generate complete step-by-step instructions for the entire modified workflow based on user requirements.
+
+**Your goal is to:**
+1. Understand the current template agent's workflow
+2. Analyze the user's modification request
+3. Generate complete step-by-step instructions that describe the entire modified workflow
+4. Ensure the modifications are feasible using available blocks
+5. Preserve the existing workflow where appropriate and incorporate the requested changes
+
+---
+
+🔍 **FIRST**: Analyze the modification request and identify what information is missing to complete it successfully. Ask ALL the clarifying questions about:
+- Specific inputs, parameters, or data sources needed for the modifications
+- Specific URLs, file paths, or identifiers related to the modifications
+- SendEmailBlock: If the modification involves email, ask for the email type for SMTP config(e.g. Gmail, Outlook, etc).
+- Any other details that would make the modifications more precise and effective
+- Any constraints, preferences, or requirements for the modifications
+
+**IMPORTANT CLARIFICATIONS POLICY:**
+- Ask no more than five concise, essential questions.
+- Do not ask for information that the user can provide at runtime via input blocks.
+- Do not ask for API keys or credentials; the platform handles credentials directly.
+
+If the modification request lacks sufficient detail, ask the user to provide more specific information before proceeding with the complete instructions.
+
+---
+
+📝 **GUIDELINES:**
+1. **OUTPUT COMPLETE INSTRUCTIONS**: Generate the entire workflow, not just the modified parts
+2. Start with the original workflow and incorporate all requested modifications
+3. Identify what needs to be added, removed, or modified from the original template
+4. Generate complete step-by-step instructions for the entire modified workflow
+5. Mention block names naturally (e.g., "Use `SendEmailBlock` to...")
+6. Ensure logical flow and proper data connections between all steps
+7. Be specific about inputs, outputs, and data flow for every step
+8. Include all steps from the original template that are still needed
+
+---
+
+📜 **RULES:**
+1. **OUTPUT FORMAT**: Only output either clarifying questions or step-by-step instructions. Do not output both.
+2. **USE ONLY THE BLOCKS PROVIDED**.
+3. **IF POSSIBLE, USE already defined properties of blocks, instead of ADDITIONAL properties**.
+4. **REQUIRED INPUTS**: ALL fields in `required_input` must be provided.
+5. **DATA TYPE MATCHING**: The `data types` of linked properties must match.
+6. **PREVIOUS BLOCK LINK**: Blocks in the second-to-last step of a workflow must include at least one link from a preceding block, excluding starting blocks.
+7. **AI-RELATED BLOCKS PROMPTS**: Write expert-level prompts that generate clear, natural, human-quality responses.
+8. **MULTIPLE EXECUTIONS BLOCKS**: The non-iterative input of multiple executions blocks should be stored in `StoreValueBlock` and used in the next step.
+9. **INPUT BLOCKS**: Provide a realistic example as the default value so users can better understand the expected input format.
+10. **TEXT CLEANUP BEFORE USER OUTPUT**: Before any user-facing output (e.g., email via `SendEmailBlock`, Discord via `SendDiscordMessageBlock`, Slack, etc.), insert a `TextReplaceBlock` to sanitize text. At minimum, replace quotation marks (`&#39;` and `&#34;`) with single quotes (`'`) and double quotes (`"`) in all outgoing text fields (such as email subject/body or message content).
+
+🔁 **ITERATIVE WORKFLOW DESIGN:**
+AutoGPT's block execution style requires that all properties associated with the block be passed for execution. If a block must be executed multiple times, any properties passed to the block that are not passed through `StepThroughItemsBlock` must be stored in `StoreValueBlock` and then passed.
+
+---
+
+🚫 **CRITICAL RESTRICTIONS - IMPORTANT USAGE GUIDELINES:**
+
+1. **AddToListBlock:**
+   **IMPORTANT**: This block doesn't pass the updated list once after ALL additions but passes the updated list to the next block EVERY addition. Use `CountItemsBlock` + `ConditionBlock` to control when to proceed with the complete list.
+
+2. **SendEmailBlock:**
+   **IMPORTANT**: Just draft the email and output so users can review it.
+   Based on user's clarification for email type, set the SMTP config.(e.g., For Gmail, set SMTP_Server to smtp.gmail.com, SMTP_Port to 587.)
+
+3. **ConditionBlock:**
+   **IMPORTANT**: The `value2` of `ConditionBlock` is reference value and `value1` is contrast value.
+
+4. **AgentFileInputBlock:**
+   **DO NOT USE** - Currently, this block doesn't return the correct file path.
+
+5. **CodeExecutionBlock:**
+   **DO NOT USE** - It's not working well. Instead, use AI-related blocks to do the same thing.
+
+6. **ReadCsvBlock:**
+   **IMPORTANT**: Do not use the `row` output property of this block. Only use the `rows` output property.
+
+7. **FillTextTemplateBlock:**
+   **IMPORTANT**: Do not use any scripting or complex formatting in the `format` property. Use only simple variable names without nested properties.
+   ❌ **NOT ALLOWED**: `'%.2f'|format(roi)`, `data.company`, `user.name`
+   ✅ **ALLOWED**: `company`, `name`, `roi`
+
+---
+
+🚫 **RESTRICTIONS:**
+1. Focus on **WHAT** the complete workflow should do, not just the modifications
+2. Output the entire workflow, not just changes or additions
+3. **DO NOT include the actual agent JSON** - only describe the complete modified workflow
+
+---
+
+📋 **OUTPUT FORMAT:**
+
+You must respond with valid JSON in one of these two formats:
+
+1. **If the modification request needs more information, respond with:**
+```json
+{{
+  "type": "clarifying_questions",
+  "questions": [
+    {{
+      "question": "What specific data source should the modified workflow use?",
+      "keyword": "data_source",
+      "example": "CSV file, API endpoint, database"
+    }},
+    {{
+      "question": "How should the output be formatted?",
+      "keyword": "output_format",
+      "example": "JSON, HTML report, plain text"
+    }}
+  ]
+}}
+```
+
+2. **Otherwise, respond with complete step-by-step instructions:**
+```json
+{{
+  "type": "instructions",
+  "steps": [
+    {{
+      "step_number": 1,
+      "description": "First, use the `AgentShortTextInputBlock` to get the URL of the YouTube video you want to summarize.",
+      "inputs": [
+        {{
+          "name": "name",
+          "value": "YouTube Video URL"
+        }}
+      ],
+      "outputs": [
+        {{
+          "name": "result",
+          "description": "The YouTube URL entered by the user"
+        }}
+      ]
+    }},
+    {{
+      "step_number": 2,
+      "description": "Next, use the `TranscribeYoutubeVideoBlock` to get the full text transcript of the video.",
+      "inputs": [
+        {{
+          "name": "youtube_url",
+          "value": "The `result` from the `AgentShortTextInputBlock`"
+        }}
+      ],
+      "outputs": [
+        {{
+          "name": "transcript",
+          "description": "The full text transcript of the video"
+        }}
+      ]
+    }},
+    ...
+  ]
+}}
+```
+
+---
+
+🧱 **Available Blocks:**
+{block_summaries}
+"""
+
+TEMPLATE_MODIFICATION_HUMAN_PROMPT_TEMPLATE = """
+📋 TEMPLATE AGENT INFORMATION:
+{template_description}
+
+---
+
+🎯 USER MODIFICATION REQUEST:
+{modification_request}
+
+---
+
+📝 CURRENT INSTRUCTIONS (if any):
+{current_instructions}
+"""
+
 # =============================================================================
 # PROMPT GETTER FUNCTIONS
 # =============================================================================
@@ -1070,6 +1248,20 @@ def get_incremental_agent_update_human_prompt(current_agent_json: dict, updated_
     return INCREMENTAL_AGENT_UPDATE_HUMAN_PROMPT_TEMPLATE.format(
         current_agent_json=json.dumps(current_agent_json, indent=2),
         updated_instructions=updated_instructions
+    )
+
+def get_template_modification_system_prompt(block_summaries: list) -> str:
+    """Get the template modification system prompt with block summaries."""
+    return TEMPLATE_MODIFICATION_SYSTEM_PROMPT_TEMPLATE.format(
+        block_summaries=json.dumps(block_summaries, indent=2)
+    )
+
+def get_template_modification_human_prompt(template_description: str, modification_request: str, current_instructions: str = None) -> str:
+    """Get the template modification human prompt with template description, modification request, and current instructions."""
+    return TEMPLATE_MODIFICATION_HUMAN_PROMPT_TEMPLATE.format(
+        template_description=template_description,
+        modification_request=modification_request,
+        current_instructions=current_instructions or "None - starting fresh"
     )
 
 async def get_block_summaries():
@@ -1382,7 +1574,7 @@ async def generate_detailed_goal(rough_goal, block_summaries):
         logging.error(f"❌ Error generating detailed goal: {e}")
         return None
 
-async def generate_template_modification_instructions(template_agent_json: dict, modification_request: str, block_summaries: list, current_instructions: str = None) -> str:
+async def generate_template_modification_instructions(template_agent_json: dict, modification_request: str, block_summaries: list, current_instructions: str = None):
     """
     Generate complete modification instructions based on an existing template agent and user's modification request.
     This creates complete step-by-step instructions that describe the entire modified workflow.
@@ -1394,109 +1586,60 @@ async def generate_template_modification_instructions(template_agent_json: dict,
         current_instructions: Current instructions (for retry scenarios)
     
     Returns:
-        Complete instructions JSON or None on error
+        Parsed JSON dict with either:
+        - {"type": "clarifying_questions", "questions": [...]} if more information is needed
+        - {"type": "instructions", "steps": [...]} with complete workflow instructions
+        - None on error
     """
     logging.info(f"Generating template modification instructions: {modification_request}")
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 
-    # Create a description of the current template agent
-    template_description = f"""
-**Template Agent Analysis:**
-- Name: {template_agent_json.get('name', 'Unnamed')}
-- Description: {template_agent_json.get('description', 'No description')}
-- Nodes: {len(template_agent_json.get('nodes', []))}
-- Links: {len(template_agent_json.get('links', []))}
-
-**Current Workflow:**
-"""
+    # Create a mapping from block IDs to block names
+    block_id_to_name = {}
+    blocks_data = await load_json_async(BLOCK_FILE)
+    for block in blocks_data:
+        block_id = block.get('id')
+        block_name = block.get('name')
+        if block_id and block_name:
+            block_id_to_name[block_id] = block_name
     
     # Analyze the current workflow by examining nodes and their connections
     nodes = template_agent_json.get('nodes', [])
     links = template_agent_json.get('links', [])
     
-    # Create a simple workflow description
+    # Collect unique blocks used in the template
+    blocks_used_in_template = {}
+    for node in nodes:
+        block_id = node.get('block_id', 'Unknown')
+        if block_id in block_id_to_name:
+            blocks_used_in_template[block_id] = block_id_to_name[block_id]
+    
+    # Create a description of the current template agent
+    template_description = f"""
+**Template Agent Analysis:**
+- Name: {template_agent_json.get('name', 'Unnamed')}
+- Description: {template_agent_json.get('description', 'No description')}
+- Nodes: {len(nodes)}
+- Links: {len(links)}
+
+**Blocks Used in Template:**
+"""
+    
+    # List all unique blocks used with their IDs and names
+    for block_id, block_name in blocks_used_in_template.items():
+        template_description += f"- {block_name} (ID: {block_id})\n"
+    
+    template_description += "\n**Current Workflow:**\n"
+    
+    # Create a simple workflow description with block names
     for i, node in enumerate(nodes):
         block_id = node.get('block_id', 'Unknown')
-        template_description += f"{i+1}. Use `{block_id}` block\n"
+        block_name = block_id_to_name.get(block_id, block_id)
+        template_description += f"{i+1}. Use `{block_name}` block\n"
     
-    # Create the prompt for template modification
-    system_prompt = f"""
-You are an expert AutoGPT Template Modifier. Your task is to analyze an existing agent template and generate complete step-by-step instructions for the entire modified workflow based on user requirements.
-
-**Your goal is to:**
-1. Understand the current template agent's workflow
-2. Analyze the user's modification request
-3. Generate complete step-by-step instructions that describe the entire modified workflow
-4. Ensure the modifications are feasible using available blocks
-5. Preserve the existing workflow where appropriate and incorporate the requested changes
-
----
-
-📝 **GUIDELINES:**
-1. **OUTPUT COMPLETE INSTRUCTIONS**: Generate the entire workflow, not just the modified parts
-2. Start with the original workflow and incorporate all requested modifications
-3. Identify what needs to be added, removed, or modified from the original template
-4. Generate complete step-by-step instructions for the entire modified workflow
-5. Mention block names naturally (e.g., "Use `SendEmailBlock` to...")
-6. Ensure logical flow and proper data connections between all steps
-7. Be specific about inputs, outputs, and data flow for every step
-8. Include all steps from the original template that are still needed
-
----
-
-🚫 **RESTRICTIONS:**
-1. **DO NOT ask clarifying questions** - make reasonable assumptions
-2. **DO NOT include the actual agent JSON** - only describe the complete modified workflow
-3. Focus on **WHAT** the complete workflow should do, not just the modifications
-4. Output the entire workflow, not just changes or additions
-
----
-
-📋 **OUTPUT FORMAT:**
-Return complete step-by-step instructions in the same format as the original decomposition:
-
-```json
-{{
-  "type": "instructions",
-  "steps": [
-    {{
-      "step_number": 1,
-      "description": "Description of the step",
-      "inputs": [
-        {{
-          "name": "input_name",
-          "value": "input_value or reference to previous step"
-        }}
-      ],
-      "outputs": [
-        {{
-          "name": "output_name",
-          "description": "Description of the output"
-        }}
-      ]
-    }}
-  ]
-}}
-```
-
----
-
-🧱 **Available Blocks:**
-{json.dumps(block_summaries, indent=2)}
-"""
-
-    human_prompt = f"""
-**Template Agent:**
-{template_description}
-
-**User Modification Request:**
-{modification_request}
-
-**Current Instructions (if any):**
-{current_instructions or "None - starting fresh"}
-
-Please generate complete step-by-step instructions for the entire modified workflow according to the user's request. Include all steps from the original template that are still needed, plus any new or modified steps.
-"""
+    # Get prompts using the template getter functions
+    system_prompt = get_template_modification_system_prompt(block_summaries)
+    human_prompt = get_template_modification_human_prompt(template_description, modification_request, current_instructions)
 
     try:
         response = await llm.ainvoke([
@@ -1511,6 +1654,8 @@ Please generate complete step-by-step instructions for the entire modified workf
         if parsed is None:
             logging.error("❌ Error generating template modification instructions: Failed to parse JSON from LLM response")
             return None
+        
+        logging.info(f"✅ Generated template modification instructions successfully")
         return parsed
         
     except Exception as e:

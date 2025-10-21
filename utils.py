@@ -254,39 +254,19 @@ class AgentFixer:
 
         return agent
     
-    async def fix_value2_empty_string(self, agent: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Fix empty value2 fields in specific block types.
-        
-        Args:
-            agent: The agent dictionary to fix
-            
-        Returns:
-            The fixed agent dictionary
-        """
-        
-        for node in agent.get("nodes", []):
-            if node.get("block_id") in self.FIX_VALUE2_EMPTY_STRING_BLOCK_IDS:
-                input_default = node.get("input_default", {})
-                if "value2" in input_default and input_default["value2"] in ("", " ", [], {}):
-                    old_value = input_default["value2"]
-                    input_default["value2"] = False
-                    self.add_fix_log(f"Fixed value2 in block_id {node.get('block_id')}: {old_value} -> False")
-        
-        return agent
-    
     async def fix_addtolist_blocks(self, agent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Fix AddToList blocks by adding a prerequisite empty AddToList block.
         
         When an AddToList block is found, this fixer:
-        1. Checks if there's a CreateListBlock before it
-        2. If CreateListBlock exists, removes it and its link to AddToList block
-        3. Adds an empty AddToList block before the original AddToList block
-        4. The first block is standalone (not connected to other blocks)
-        5. The second block receives input from previous blocks and can self-reference
-        6. Ensures the original AddToList block has a self-referencing link
-        7. Prevents duplicate prerequisite blocks by checking existing connections
+        1. Checks if there's a CreateListBlock before it (directly or through StoreValueBlock)
+        2. If CreateListBlock exists (direct link), removes it and its link to AddToList block
+        3. If CreateListBlock + StoreValueBlock exists, only removes the link from StoreValueBlock to AddToList block
+        4. Adds an empty AddToList block before the original AddToList block
+        5. The first block is standalone (not connected to other blocks)
+        6. The second block receives input from previous blocks and can self-reference
+        7. Ensures the original AddToList block has a self-referencing link
+        8. Prevents duplicate prerequisite blocks by checking existing connections
         
         Args:
             agent: The agent dictionary to fix
@@ -301,7 +281,7 @@ class AgentFixer:
         original_addtolist_node_ids = set()  # Track original AddToList node IDs
         createlist_block_id = "a912d5c7-6e00-4542-b2a9-8034136930e4"
         
-        # First pass: identify CreateListBlock nodes that are linked to AddToList blocks
+        # First pass: identify CreateListBlock nodes and links that need to be removed
         createlist_nodes_to_remove = set()
         links_to_remove = []
         
@@ -309,12 +289,32 @@ class AgentFixer:
             source_node = next((node for node in nodes if node.get("id") == link.get("source_id")), None)
             sink_node = next((node for node in nodes if node.get("id") == link.get("sink_id")), None)
             
+            # Case 1: CreateListBlock directly linked to AddToList block - remove both node and link
             if (source_node and sink_node and 
                 source_node.get("block_id") == createlist_block_id and 
                 sink_node.get("block_id") == self.ADDTOLIST_BLOCK_ID):
                 createlist_nodes_to_remove.add(source_node.get("id"))
                 links_to_remove.append(link)
                 self.add_fix_log(f"Identified CreateListBlock {source_node.get('id')} linked to AddToList block {sink_node.get('id')} for removal")
+            
+            # Case 2: StoreValueBlock linked to AddToList block - check if there's a CreateListBlock before it
+            if (source_node and sink_node and 
+                source_node.get("block_id") == self.STORE_VALUE_BLOCK_ID and 
+                sink_node.get("block_id") == self.ADDTOLIST_BLOCK_ID):
+                # Check if this StoreValueBlock receives input from a CreateListBlock
+                storevalue_id = source_node.get("id")
+                has_createlist_before = False
+                for prev_link in links:
+                    if prev_link.get("sink_id") == storevalue_id:
+                        prev_source_node = next((node for node in nodes if node.get("id") == prev_link.get("source_id")), None)
+                        if prev_source_node and prev_source_node.get("block_id") == createlist_block_id:
+                            has_createlist_before = True
+                            break
+                
+                # If there's a CreateListBlock before StoreValueBlock, only remove the StoreValueBlock -> AddToList link
+                if has_createlist_before:
+                    links_to_remove.append(link)
+                    self.add_fix_log(f"Identified StoreValueBlock {storevalue_id} (with CreateListBlock before it) linked to AddToList block {sink_node.get('id')} - removing only the link")
         
         # Second pass: process nodes, skipping CreateListBlock nodes that will be removed
         prerequisite_counter = 0  # Counter to ensure unique positions
@@ -638,7 +638,6 @@ class AgentFixer:
         # Apply fixes in order
         agent = await self.fix_agent_ids(agent)
         agent = await self.fix_double_curly_braces(agent)
-        agent = await self.fix_value2_empty_string(agent)
         agent = await self.fix_storevalue_before_condition(agent)
         agent = await self.fix_addtolist_blocks(agent)
         agent = await self.fix_addtodictionary_blocks(agent)
