@@ -210,7 +210,8 @@ You must respond with valid JSON in one of these four formats:
   "steps": [
     {{
       "step_number": 1,
-      "description": "First, use the `AgentShortTextInputBlock` to get the URL of the YouTube video you want to summarize.",
+      "block_name": "AgentShortTextInputBlock",
+      "description": "Get the URL of the YouTube video you want to summarize.",
       "inputs": [
         {{
           "name": "name",
@@ -226,7 +227,8 @@ You must respond with valid JSON in one of these four formats:
     }},
     {{
       "step_number": 2,
-      "description": "Next, use the `TranscribeYoutubeVideoBlock` to get the full text transcript of the video.",
+      "block_name": "TranscribeYoutubeVideoBlock",
+      "description": "Get the full text transcript of the video.",
       "inputs": [
         {{
           "name": "youtube_url",
@@ -281,7 +283,8 @@ You must respond with valid JSON in one of these four formats:
   "steps": [
     {{
       "step_number": 1,
-      "description": "First, use the `AgentShortTextInputBlock` to get the URL of the YouTube video you want to summarize.",
+      "block_name": "AgentShortTextInputBlock",
+      "description": "Get the URL of the YouTube video you want to summarize.",
       "inputs": [
         {{
           "name": "name",
@@ -297,7 +300,8 @@ You must respond with valid JSON in one of these four formats:
     }},
     {{
       "step_number": 2,
-      "description": "Next, use the `TranscribeYoutubeVideoBlock` to get the full text transcript of the video.",
+      "block_name": "TranscribeYoutubeVideoBlock",
+      "description": "Get the full text transcript of the video.",
       "inputs": [
         {{
           "name": "youtube_url",
@@ -648,7 +652,8 @@ You must respond with valid JSON in one of these four formats:
   "steps": [
     {{
       "step_number": 1,
-      "description": "Use the `AgentShortTextInputBlock` to get the user's location.",
+      "block_name": "AgentShortTextInputBlock",
+      "description": "Get the user's location.",
       "inputs": [
         {{
           "name": "name",
@@ -665,7 +670,8 @@ You must respond with valid JSON in one of these four formats:
     }},
     {{
       "step_number": 2,
-      "description": "Use the `SendEmailBlock` to send the report with error handling.",
+      "block_name": "SendEmailBlock",
+      "description": "Send the report with error handling.",
       "inputs": [
         {{
           "name": "to",
@@ -695,7 +701,8 @@ You must respond with valid JSON in one of these four formats:
     }},
     {{
       "step_number": 3,
-      "description": "Use the `ErrorHandlingBlock` to catch and log any errors from the email step.",
+      "block_name": "ErrorHandlingBlock",
+      "description": "Catch and log any errors from the email step.",
       "inputs": [
         {{
           "name": "error_source",
@@ -752,7 +759,8 @@ Output: `email_status`
   "steps": [
     {{
       "step_number": 1,
-      "description": "Use the `AgentShortTextInputBlock` to get the user's location.",
+      "block_name": "AgentShortTextInputBlock",
+      "description": "Get the user's location.",
       "inputs": [
         {{
           "name": "name",
@@ -769,7 +777,8 @@ Output: `email_status`
     }},
     {{
       "step_number": 2,
-      "description": "Use the `SendEmailBlock` to send the report with error handling.",
+      "block_name": "SendEmailBlock",
+      "description": "Send the report with error handling.",
       "inputs": [
         {{
           "name": "to",
@@ -799,7 +808,8 @@ Output: `email_status`
     }},
     {{
       "step_number": 3,
-      "description": "Use the `ErrorHandlingBlock` to catch and log any errors from the email step.",
+      "block_name": "ErrorHandlingBlock",
+      "description": "Catch and log any errors from the email step.",
       "inputs": [
         {{
           "name": "error_source",
@@ -1142,7 +1152,8 @@ You must respond with valid JSON in one of these two formats:
   "steps": [
     {{
       "step_number": 1,
-      "description": "First, use the `AgentShortTextInputBlock` to get the URL of the YouTube video you want to summarize.",
+      "block_name": "AgentShortTextInputBlock",
+      "description": "Get the URL of the YouTube video you want to summarize.",
       "inputs": [
         {{
           "name": "name",
@@ -1158,7 +1169,8 @@ You must respond with valid JSON in one of these two formats:
     }},
     {{
       "step_number": 2,
-      "description": "Next, use the `TranscribeYoutubeVideoBlock` to get the full text transcript of the video.",
+      "block_name": "TranscribeYoutubeVideoBlock",
+      "description": "Get the full text transcript of the video.",
       "inputs": [
         {{
           "name": "youtube_url",
@@ -1229,11 +1241,17 @@ def get_incremental_update_system_prompt(block_summaries: list) -> str:
         block_summaries=json.dumps(block_summaries, indent=2)
     )
 
-def get_incremental_update_human_prompt(improvement_request: str, current_instructions: str) -> str:
+def get_incremental_update_human_prompt(improvement_request: str, current_instructions) -> str:
     """Get the incremental update human prompt with improvement request and current instructions."""
+    # Convert current_instructions to string format for the prompt if it's JSON
+    if isinstance(current_instructions, dict):
+        instructions_text = json.dumps(current_instructions, indent=2)
+    else:
+        instructions_text = str(current_instructions)
+    
     return INCREMENTAL_UPDATE_HUMAN_PROMPT_TEMPLATE.format(
         improvement_request=improvement_request,
-        current_instructions=current_instructions
+        current_instructions=instructions_text
     )
 
 def get_incremental_agent_update_system_prompt(used_blocks: list, example: str) -> str:
@@ -1256,12 +1274,20 @@ def get_template_modification_system_prompt(block_summaries: list) -> str:
         block_summaries=json.dumps(block_summaries, indent=2)
     )
 
-def get_template_modification_human_prompt(template_description: str, modification_request: str, current_instructions: str = None) -> str:
+def get_template_modification_human_prompt(template_description: str, modification_request: str, current_instructions = None) -> str:
     """Get the template modification human prompt with template description, modification request, and current instructions."""
+    # Convert current_instructions to string format for the prompt if it's JSON
+    if current_instructions is None:
+        instructions_text = "None - starting fresh"
+    elif isinstance(current_instructions, dict):
+        instructions_text = json.dumps(current_instructions, indent=2)
+    else:
+        instructions_text = str(current_instructions)
+    
     return TEMPLATE_MODIFICATION_HUMAN_PROMPT_TEMPLATE.format(
         template_description=template_description,
         modification_request=modification_request,
-        current_instructions=current_instructions or "None - starting fresh"
+        current_instructions=instructions_text
     )
 
 async def get_block_summaries():
@@ -1284,11 +1310,18 @@ async def decompose_description(description, block_summaries, original_text=None
 
     if original_text and user_instruction:
         logging.info(f"Revising instructions based on user feedback...")
+        
+        # Convert original_text to string format for the prompt if it's JSON
+        if isinstance(original_text, dict):
+            original_text_str = json.dumps(original_text, indent=2)
+        else:
+            original_text_str = str(original_text)
+        
         prompt = f"""
             You previously generated the following step-by-step instructions:
 
             ---
-            {original_text}
+            {original_text_str}
             ---
 
             Now revise them based on this user feedback:
@@ -1310,11 +1343,18 @@ async def decompose_description(description, block_summaries, original_text=None
 
     if original_text and retry_feedback:
         logging.info(f"Revising instructions based on validation error: {retry_feedback}")
+        
+        # Convert original_text to string format for the prompt if it's JSON
+        if isinstance(original_text, dict):
+            original_text_str = json.dumps(original_text, indent=2)
+        else:
+            original_text_str = str(original_text)
+        
         prompt = f"""
             You previously generated the following step-by-step instructions:
 
             ---
-            {original_text}
+            {original_text_str}
             ---
 
             Validation failed: {retry_feedback}
@@ -1356,7 +1396,7 @@ async def decompose_description(description, block_summaries, original_text=None
         logging.error(f"❌ Error decomposing description: {e}")
         return None
     
-async def generate_agent_json_from_subtasks(instructions_text, blocks_json):
+async def generate_agent_json_from_subtasks(instructions, blocks_json):
     logging.info(f"Generating agent JSON from instructions...")
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 
@@ -1368,10 +1408,15 @@ async def generate_agent_json_from_subtasks(instructions_text, blocks_json):
     else:
         blocks = blocks_json
 
-    block_names = set(re.findall(r'`([A-Za-z0-9_]+Block)`', instructions_text))
-    block_names.update(re.findall(r'\b([A-Za-z0-9_]+Block)\b', instructions_text))
-    block_names = {name for name in block_names if name.endswith("Block")}
-    logging.info(f"Found block names: {block_names}")
+    # Extract block names from the structured JSON format
+    block_names = set()
+    
+    steps = instructions.get("steps", [])
+    for step in steps:
+        block_name = step.get("block_name")
+        if block_name:
+            logging.info(f"Found block name: {block_name}")
+            block_names.add(block_name)
 
     used_blocks = []
     for block in blocks:
@@ -1387,9 +1432,15 @@ async def generate_agent_json_from_subtasks(instructions_text, blocks_json):
 
     prompt = get_agent_generation_prompt(used_blocks, example)
 
+    # Ensure 'instructions' is a string before sending as LLM message content
+    if isinstance(instructions, dict):
+        instructions_content = json.dumps(instructions, indent=2)
+    else:
+        instructions_content = str(instructions)
+
     messages = [
         SystemMessage(content=prompt),
-        HumanMessage(content=instructions_text)
+        HumanMessage(content=instructions_content)
     ]
 
     response = await llm.ainvoke(messages)
@@ -1424,7 +1475,7 @@ async def generate_agent_json_from_subtasks(instructions_text, blocks_json):
         
     return agent_json, None
 
-async def update_decomposition_incrementally(improvement_request: str, current_instructions: str, block_summaries: list, original_updated_instructions: str = None, validation_error: str = None) -> str:
+async def update_decomposition_incrementally(improvement_request, current_instructions, block_summaries, original_updated_instructions=None, validation_error=None):
     """
     Update decomposition incrementally based on improvement request.
     This preserves the original structure and only modifies parts that need changes.
@@ -1432,24 +1483,31 @@ async def update_decomposition_incrementally(improvement_request: str, current_i
     
     Args:
         improvement_request: User's improvement request
-        current_instructions: Current step-by-step instructions
+        current_instructions: Current step-by-step instructions (can be string or JSON dict)
         block_summaries: Available block summaries
         original_updated_instructions: Previously generated instructions (for retry)
         validation_error: Validation error message (for retry)
     
     Returns:
-        Updated instructions string or None on error
+        Updated instructions (JSON dict) or None on error
     """
     logging.info(f"Updating decomposition incrementally: \n{improvement_request}\n...")
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 
     if original_updated_instructions and validation_error:
         logging.info(f"Revising instructions based on validation error: \n{validation_error}\n...")
+        
+        # Convert original_updated_instructions to string format for the prompt if it's JSON
+        if isinstance(original_updated_instructions, dict):
+            original_instructions_str = json.dumps(original_updated_instructions, indent=2)
+        else:
+            original_instructions_str = str(original_updated_instructions)
+        
         prompt = f"""
         You previously generated the following updated step-by-step instructions:
 
         ---
-        {original_updated_instructions}
+        {original_instructions_str}
         ---
 
         Validation failed: {validation_error}
@@ -1491,7 +1549,7 @@ async def update_decomposition_incrementally(improvement_request: str, current_i
         logging.error(f"❌ Error updating decomposition: {e}")
         return None
 
-async def update_agent_json_incrementally(updated_instructions: str, current_agent_json: dict, blocks_json: list) -> tuple:
+async def update_agent_json_incrementally(updated_instructions, current_agent_json, blocks_json):
     """
     Update agent JSON incrementally based on updated instructions.
     This preserves the original agent structure and only modifies parts that need changes.
@@ -1503,11 +1561,15 @@ async def update_agent_json_incrementally(updated_instructions: str, current_age
     logging.info("Updating agent JSON incrementally...")
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
     
-    block_names = set(re.findall(r'`([A-Za-z0-9_]+Block)`', updated_instructions))
-    block_names.update(re.findall(r'\b([A-Za-z0-9_]+Block)\b', updated_instructions))
-    block_names = {name for name in block_names if name.endswith("Block")}
-    logging.info(f"Found block names: {block_names}")
-
+    # Extract block names from the structured JSON format
+    block_names = set()
+    
+    steps = updated_instructions.get("steps", [])
+    for step in steps:
+        if step.get("block_name"):
+            logging.info(f"Found block name: {step['block_name']}")
+            block_names.add(step["block_name"])
+    
     used_blocks = []
     for block in blocks_json:
         block_name = block.get("name") or block.get("block_name")
@@ -1521,7 +1583,14 @@ async def update_agent_json_incrementally(updated_instructions: str, current_age
     example = json.dumps(example, indent=2)
 
     system_prompt = get_incremental_agent_update_system_prompt(used_blocks, example)
-    human_prompt = get_incremental_agent_update_human_prompt(current_agent_json, updated_instructions)
+    
+    # Convert updated_instructions to string format for the prompt if it's JSON
+    if isinstance(updated_instructions, dict):
+        instructions_for_prompt = json.dumps(updated_instructions, indent=2)
+    else:
+        instructions_for_prompt = str(updated_instructions)
+    
+    human_prompt = get_incremental_agent_update_human_prompt(current_agent_json, instructions_for_prompt)
     
     try:
         response = await llm.ainvoke([
@@ -1574,7 +1643,7 @@ async def generate_detailed_goal(rough_goal, block_summaries):
         logging.error(f"❌ Error generating detailed goal: {e}")
         return None
 
-async def generate_template_modification_instructions(template_agent_json: dict, modification_request: str, block_summaries: list, current_instructions: str = None):
+async def generate_template_modification_instructions(template_agent_json, modification_request, block_summaries, current_instructions=None):
     """
     Generate complete modification instructions based on an existing template agent and user's modification request.
     This creates complete step-by-step instructions that describe the entire modified workflow.
@@ -1583,7 +1652,7 @@ async def generate_template_modification_instructions(template_agent_json: dict,
         template_agent_json: The existing agent template JSON
         modification_request: User's description of desired modifications
         block_summaries: Available block summaries
-        current_instructions: Current instructions (for retry scenarios)
+        current_instructions: Current instructions (can be string or JSON dict, for retry scenarios)
     
     Returns:
         Parsed JSON dict with either:
