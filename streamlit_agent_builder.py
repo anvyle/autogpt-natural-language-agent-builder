@@ -1012,7 +1012,8 @@ def handle_template_modification_request(modification_request: str):
                 st.rerun()
                 
             else:
-                st.session_state.updated_instructions = instructions_text
+                st.session_state.updated_instructions = ""
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.current_step = "template_modification_review"
                 st.rerun()
                 
@@ -1197,7 +1198,7 @@ def proceed_to_generation():
 def generate_agent():
     """Generate the final agent."""
     max_retries = 1
-    current_instructions = st.session_state.final_instructions_json or st.session_state.final_instructions
+    current_instructions = st.session_state.final_instructions_json
     
     for attempt in range(max_retries + 1):
         with st.spinner(f"Generating your agent... (attempt {attempt + 1}/{max_retries + 1})"):
@@ -1602,6 +1603,7 @@ def process_enhanced_template_modification_request(enhanced_request: str):
                 
             else:
                 st.session_state.updated_instructions = updated_instructions
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.current_step = "template_modification_review"
                 st.rerun()
                 
