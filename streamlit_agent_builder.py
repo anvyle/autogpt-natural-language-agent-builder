@@ -62,7 +62,9 @@ def initialize_session_state():
         'goal': None,
         'detailed_goal': None,
         'current_decomposition': None,
+        'current_decomposition_json': None,  # Raw JSON instructions
         'final_instructions': None,
+        'final_instructions_json': None,  # Raw JSON instructions
         'agent_json': None,
         'clarifying_questions': None,
         'parsed_questions': [],
@@ -80,6 +82,7 @@ def initialize_session_state():
         'chat_parsed_questions': [],
         'chat_question_answers': {},
         'updated_instructions': None,
+        'updated_instructions_json': None,  # Raw JSON instructions
         'original_instructions': None,
         'original_base_instructions': None,
         'last_decomposition': None,
@@ -227,7 +230,9 @@ def reset_chat():
     st.session_state.goal = None
     st.session_state.detailed_goal = None
     st.session_state.current_decomposition = None
+    st.session_state.current_decomposition_json = None
     st.session_state.final_instructions = None
+    st.session_state.final_instructions_json = None
     st.session_state.agent_json = None
     st.session_state.clarifying_questions = None
     st.session_state.parsed_questions = []
@@ -245,6 +250,7 @@ def reset_chat():
     st.session_state.chat_parsed_questions = []
     st.session_state.chat_question_answers = {}
     st.session_state.updated_instructions = None
+    st.session_state.updated_instructions_json = None
     st.session_state.original_instructions = None
     st.session_state.original_base_instructions = None
     st.session_state.last_decomposition = None
@@ -999,12 +1005,14 @@ def handle_template_modification_request(modification_request: str):
                             instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
                     instructions_text += "\n"
                 
+                # Store both formatted text for UI and raw JSON for agent generation
                 st.session_state.updated_instructions = instructions_text
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.current_step = "template_modification_review"
                 st.rerun()
                 
             else:
-                st.session_state.updated_instructions = updated_instructions
+                st.session_state.updated_instructions = instructions_text
                 st.session_state.current_step = "template_modification_review"
                 st.rerun()
                 
@@ -1072,7 +1080,9 @@ def proceed_to_decomposition():
                             instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
                     instructions_text += "\n"
                 
+                # Store both formatted text for UI and raw JSON for agent generation
                 st.session_state.current_decomposition = instructions_text
+                st.session_state.current_decomposition_json = decomposition
                 st.session_state.current_step = "decomposition_review"
                 st.rerun()
                 
@@ -1179,17 +1189,15 @@ def proceed_to_generation():
     """Proceed to agent generation."""
     st.session_state.current_step = "final"
     
-    if "Here are step-by-step instructions:" in st.session_state.current_decomposition:
-        st.session_state.final_instructions = st.session_state.current_decomposition.split("Here are step-by-step instructions:")[1].strip()
-    else:
-        st.session_state.final_instructions = st.session_state.current_decomposition
+    st.session_state.final_instructions = st.session_state.current_decomposition
+    st.session_state.final_instructions_json = st.session_state.current_decomposition_json
     
     st.rerun()
 
 def generate_agent():
     """Generate the final agent."""
     max_retries = 1
-    current_instructions = st.session_state.final_instructions
+    current_instructions = st.session_state.final_instructions_json or st.session_state.final_instructions
     
     for attempt in range(max_retries + 1):
         with st.spinner(f"Generating your agent... (attempt {attempt + 1}/{max_retries + 1})"):
@@ -1219,6 +1227,9 @@ def generate_agent():
                         if refined_instructions:
                             current_instructions = refined_instructions
                             st.session_state.final_instructions = current_instructions
+                            # If refined_instructions is JSON format, store it as JSON
+                            if isinstance(refined_instructions, dict) and refined_instructions.get("type") == "instructions":
+                                st.session_state.final_instructions_json = refined_instructions
                             st.success("✅ Instructions refined based on validation error. Retrying agent generation...")
                             continue
                         else:
@@ -1262,7 +1273,7 @@ def generate_agent():
 def generate_updated_agent():
     """Generate the updated agent based on the new instructions."""
     max_retries = 1
-    current_instructions = st.session_state.updated_instructions
+    current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
     
     for attempt in range(max_retries + 1):
         with st.spinner(f"Generating your updated agent... (attempt {attempt + 1}/{max_retries + 1})"):
@@ -1294,6 +1305,9 @@ def generate_updated_agent():
                         if refined_instructions:
                             current_instructions = refined_instructions
                             st.session_state.updated_instructions = current_instructions
+                            # If refined_instructions is JSON format, store it as JSON
+                            if isinstance(refined_instructions, dict) and refined_instructions.get("type") == "instructions":
+                                st.session_state.updated_instructions_json = refined_instructions
                             st.success("✅ Instructions refined based on validation error. Retrying agent generation...")
                             continue
                         else:
@@ -1345,7 +1359,7 @@ def handle_improvement_request(improvement_request: str):
     with st.spinner("Processing improvement request..."):
         try:
             # Use the most recent instructions - either updated_instructions from previous chat or original
-            current_instructions = st.session_state.updated_instructions or st.session_state.final_instructions or st.session_state.current_decomposition
+            current_instructions = st.session_state.updated_instructions_json or st.session_state.final_instructions_json or st.session_state.current_decomposition_json
             
             updated_instructions = asyncio.run(
                 update_decomposition_incrementally(
@@ -1401,7 +1415,9 @@ def handle_improvement_request(improvement_request: str):
                             instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
                     instructions_text += "\n"
                 
+                # Store both formatted text for UI and raw JSON for agent generation
                 st.session_state.updated_instructions = instructions_text
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.original_instructions = current_instructions
                 st.session_state.current_step = "decomposition_review"
                 st.rerun()
@@ -1501,7 +1517,7 @@ def process_enhanced_improvement_request(enhanced_request: str):
     with st.spinner("Processing enhanced improvement request..."):
         try:
             # Use the most recent instructions - either updated_instructions from previous chat or original
-            current_instructions = st.session_state.updated_instructions or st.session_state.final_instructions or st.session_state.current_decomposition
+            current_instructions = st.session_state.updated_instructions_json or st.session_state.final_instructions_json or st.session_state.current_decomposition_json
             
             updated_instructions = asyncio.run(
                 update_decomposition_incrementally(
@@ -1530,7 +1546,9 @@ def process_enhanced_improvement_request(enhanced_request: str):
                             instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
                     instructions_text += "\n"
                 
+                # Store both formatted text for UI and raw JSON for agent generation
                 st.session_state.updated_instructions = instructions_text
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.original_instructions = current_instructions
                 st.session_state.current_step = "decomposition_review"
                 st.rerun()
@@ -1576,7 +1594,9 @@ def process_enhanced_template_modification_request(enhanced_request: str):
                             instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
                     instructions_text += "\n"
                 
+                # Store both formatted text for UI and raw JSON for agent generation
                 st.session_state.updated_instructions = instructions_text
+                st.session_state.updated_instructions_json = updated_instructions
                 st.session_state.current_step = "template_modification_review"
                 st.rerun()
                 
@@ -1591,7 +1611,7 @@ def process_enhanced_template_modification_request(enhanced_request: str):
 def generate_modified_agent_from_template():
     """Generate the modified agent based on template and modification instructions."""
     max_retries = 1
-    current_instructions = st.session_state.updated_instructions
+    current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
     
     for attempt in range(max_retries + 1):
         with st.spinner(f"Generating your modified agent... (attempt {attempt + 1}/{max_retries + 1})"):
@@ -1622,6 +1642,9 @@ def generate_modified_agent_from_template():
                         if refined_instructions:
                             current_instructions = refined_instructions
                             st.session_state.updated_instructions = current_instructions
+                            # If refined_instructions is JSON format, store it as JSON
+                            if isinstance(refined_instructions, dict) and refined_instructions.get("type") == "instructions":
+                                st.session_state.updated_instructions_json = refined_instructions
                             st.success("✅ Instructions refined based on validation error. Retrying agent generation...")
                             continue
                         else:
