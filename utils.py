@@ -41,6 +41,7 @@ class AgentFixer:
         self.CODE_EXECUTION_BLOCK_ID = "0b02b072-abe7-11ef-8372-fb5d162dd712"
         self.DATA_SAMPLING_BLOCK_ID = "4a448883-71fa-49cf-91cf-70d793bd7d87"
         self.STORE_VALUE_BLOCK_ID = "1ff065e9-88e8-4358-9d82-8dc91f622ba9"
+        self.UNIVERSAL_TYPE_CONVERTER_BLOCK_ID = "95d1b990-ce13-4d88-9737-ba5c2070c97b"
         self.fixes_applied = []
     
     def is_uuid(self, value: str) -> bool:
@@ -647,6 +648,8 @@ class AgentFixer:
         # Apply link static properties fix if blocks are provided
         if blocks:
             agent = await self.fix_link_static_properties(agent, blocks)
+            # Apply data type mismatch fix if blocks are provided
+            agent = await self.fix_data_type_mismatch(agent, blocks)
         
         logging.info(f"Applied {len(self.fixes_applied)} fixes to agent")
         for fix in self.fixes_applied:
@@ -658,6 +661,154 @@ class AgentFixer:
         """Get a list of all fixes that were applied."""
         return self.fixes_applied.copy()
     
+    async def fix_data_type_mismatch(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Fix data type mismatches by inserting UniversalTypeConverterBlock between incompatible connections.
+        
+        This function:
+        1. Identifies links with type mismatches using the same logic as validate_data_type_compatibility
+        2. Inserts UniversalTypeConverterBlock nodes to convert data types
+        3. Rewires the connections to go through the converter block
+        
+        Args:
+            agent: The agent dictionary to fix
+            blocks: List of available blocks for reference
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        links = agent.get("links", [])
+        
+        # Create lookup dictionaries for efficiency
+        block_lookup = {block["id"]: block for block in blocks}
+        node_lookup = {node["id"]: node for node in nodes}
+        
+        def get_defined_property_type(schema, name):
+            """Helper function to get property type from schema, handling nested properties."""
+            if "_#_" in name:
+                parent, child = name.split("_#_", 1)
+                parent_schema = schema.get(parent, {})
+                if "properties" in parent_schema and isinstance(parent_schema["properties"], dict):
+                    return parent_schema["properties"].get(child, {}).get("type")
+                else:
+                    return None
+            else:
+                return schema.get(name, {}).get("type")
+        
+        def are_types_compatible(src, sink):
+            """Check if two types are compatible."""
+            if {src, sink} <= {"integer", "number"}:
+                return True
+            return src == sink
+        
+        def get_target_type_for_conversion(source_type, sink_type):
+            """Determine the target type for conversion based on sink requirements."""
+            # Map common type variations to UniversalTypeConverterBlock supported types
+            type_mapping = {
+                "string": "string",
+                "text": "string", 
+                "integer": "number",
+                "number": "number",
+                "float": "number",
+                "boolean": "boolean",
+                "bool": "boolean",
+                "array": "list",
+                "list": "list",
+                "object": "dictionary",
+                "dict": "dictionary",
+                "dictionary": "dictionary"
+            }
+            return type_mapping.get(sink_type, sink_type)
+        
+        new_links = []
+        nodes_to_add = []
+        converter_counter = 0
+        
+        for link in links:
+            source_node = node_lookup.get(link["source_id"])
+            sink_node = node_lookup.get(link["sink_id"])
+            
+            if not source_node or not sink_node:
+                new_links.append(link)
+                continue
+            
+            source_block = block_lookup.get(source_node.get("block_id"))
+            sink_block = block_lookup.get(sink_node.get("block_id"))
+            
+            if not source_block or not sink_block:
+                new_links.append(link)
+                continue
+            
+            source_outputs = source_block.get("outputSchema", {}).get("properties", {})
+            sink_inputs = sink_block.get("inputSchema", {}).get("properties", {})
+            
+            source_type = get_defined_property_type(source_outputs, link["source_name"])
+            sink_type = get_defined_property_type(sink_inputs, link["sink_name"])
+            
+            # Check if types are incompatible
+            if source_type and sink_type and not are_types_compatible(source_type, sink_type):
+                # Create UniversalTypeConverterBlock node
+                converter_node_id = self.generate_uuid()
+                target_type = get_target_type_for_conversion(source_type, sink_type)
+                
+                converter_node = {
+                    "id": converter_node_id,
+                    "block_id": self.UNIVERSAL_TYPE_CONVERTER_BLOCK_ID,
+                    "input_default": {
+                        "type": target_type
+                    },
+                    "metadata": {
+                        "position": {
+                            "x": converter_counter * 250,  # Space nodes horizontally
+                            "y": 100  # Position below the source
+                        }
+                    },
+                    "graph_id": agent.get("id"),
+                    "graph_version": 1
+                }
+                nodes_to_add.append(converter_node)
+                converter_counter += 1
+                
+                # Create new links: source -> converter -> sink
+                source_to_converter_link = {
+                    "id": self.generate_uuid(),
+                    "source_id": link["source_id"],
+                    "source_name": link["source_name"],
+                    "sink_id": converter_node_id,
+                    "sink_name": "value"
+                }
+                
+                converter_to_sink_link = {
+                    "id": self.generate_uuid(),
+                    "source_id": converter_node_id,
+                    "source_name": "value",
+                    "sink_id": link["sink_id"],
+                    "sink_name": link["sink_name"]
+                }
+                
+                new_links.append(source_to_converter_link)
+                new_links.append(converter_to_sink_link)
+                
+                source_block_name = source_block.get("name", "Unknown Block")
+                sink_block_name = sink_block.get("name", "Unknown Block")
+                self.add_fix_log(
+                    f"Fixed data type mismatch: Inserted UniversalTypeConverterBlock {converter_node_id} "
+                    f"between {source_block_name} ({source_type}) and {sink_block_name} ({sink_type}) "
+                    f"converting to {target_type}"
+                )
+            else:
+                # Keep the original link if types are compatible
+                new_links.append(link)
+        
+        # Update the agent with new nodes and links
+        if nodes_to_add:
+            nodes.extend(nodes_to_add)
+            agent["nodes"] = nodes
+            agent["links"] = new_links
+        
+        return agent
+
     def clear_fixes_log(self):
         """Clear the list of applied fixes."""
         self.fixes_applied = []
