@@ -94,6 +94,7 @@ def initialize_session_state():
         'template_clarifying_questions': None,
         'template_parsed_questions': [],
         'template_question_answers': {},
+        'error_message': None,  # To store error messages for UI display
     }
     
     for key, default_value in session_vars.items():
@@ -262,13 +263,22 @@ def reset_chat():
     st.session_state.template_clarifying_questions = None
     st.session_state.template_parsed_questions = []
     st.session_state.template_question_answers = {}
+    st.session_state.error_message = None
 
 # =============================================================================
 # STAGE-SPECIFIC UI RENDERING
 # =============================================================================
 
+def render_error_message():
+    """Render error message if present in session state."""
+    if st.session_state.error_message:
+        st.error(f"❌ {st.session_state.error_message}")
+        # Clear error after displaying
+        st.session_state.error_message = None
+
 def render_welcome_stage():
     """Render the welcome stage."""
+    render_error_message()
     st.title("🤖 AutoGPT Agent Builder")
     st.markdown("Build AI agents through natural conversation")
     
@@ -291,6 +301,7 @@ def render_welcome_stage():
 
 def render_goal_input_stage():
     """Render the goal input stage."""
+    render_error_message()
     st.title("🎯 Define Your Goal")
     st.markdown("**Step 1: Define Your Goal**")
     
@@ -305,6 +316,7 @@ def render_goal_input_stage():
 
 def render_goal_refinement_stage():
     """Render the goal refinement stage."""
+    render_error_message()
     st.title("🎯 Review Your Goal")
     st.markdown("**Step 1: Review Your Goal**")
     
@@ -327,6 +339,7 @@ def render_goal_refinement_stage():
 
 def render_goal_suggestion_stage():
     """Render the goal suggestion stage."""
+    render_error_message()
     st.title("🎯 Goal Suggestion")
     st.markdown("**Step 1: Goal Suggestion**")
     
@@ -357,6 +370,7 @@ def render_goal_suggestion_stage():
 
 def render_clarification_stage():
     """Render the clarification stage."""
+    render_error_message()
     st.title("❓ Clarifying Questions")
     st.markdown("**Step 2: Additional Information**")
     
@@ -388,6 +402,7 @@ def render_clarification_stage():
 
 def render_answering_question_stage():
     """Render the answering question stage."""
+    render_error_message()
     st.title("❓ Answer Question")
     st.markdown("**Step 2: Answer Question**")
     
@@ -414,6 +429,7 @@ def render_answering_question_stage():
 
 def render_decomposition_review_stage():
     """Render the decomposition review stage."""
+    render_error_message()
     st.title("📋 Review Instructions")
     
     # Determine if we're in improvement mode or initial creation
@@ -461,6 +477,7 @@ def render_decomposition_review_stage():
 
 def render_final_stage():
     """Render the final stage before generation."""
+    render_error_message()
     st.title("🚀 Ready to Generate")
     
     # Determine if we're in improvement mode or initial creation
@@ -508,6 +525,7 @@ def render_final_stage():
 
 def render_agent_results_stage():
     """Render the agent results stage."""
+    render_error_message()
     # Determine if this is an updated agent or initial agent
     if st.session_state.generation_counter > 0:
         st.title(f"🎉 Updated Agent #{st.session_state.generation_counter} Generated!")
@@ -563,6 +581,7 @@ def render_agent_results_stage():
 
 def render_agent_chat_stage():
     """Render the agent improvement chat stage."""
+    render_error_message()
     st.title("💬 Agent Improvement")
     st.markdown("**Agent Improvement Mode**")
     
@@ -584,6 +603,7 @@ def render_agent_chat_stage():
 
 def render_template_upload_stage():
     """Render the template upload stage."""
+    render_error_message()
     st.title("📁 Template Agent Upload")
     st.markdown("**Template Agent Modification Mode**")
     
@@ -593,6 +613,7 @@ def render_template_upload_stage():
 
 def render_template_instructions_stage():
     """Render the template instructions stage."""
+    render_error_message()
     st.title("📝 Template Modifications")
     st.markdown("**Step 2: Describe Modifications**")
     
@@ -606,6 +627,7 @@ def render_template_instructions_stage():
 
 def render_template_modification_review_stage():
     """Render the template modification review stage."""
+    render_error_message()
     st.title("📋 Review Template Modifications")
     st.markdown("**Step 3: Review Modifications**")
     
@@ -947,6 +969,7 @@ def handle_template_uploaded(agent_json: dict):
 def handle_template_modification_request(modification_request: str):
     """Handle template modification request."""
     st.session_state.template_modification_instructions = modification_request
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Processing template modification request..."):
         try:
@@ -960,7 +983,8 @@ def handle_template_modification_request(modification_request: str):
             )
             
             if not updated_instructions:
-                st.error("❌ Failed to generate modification instructions")
+                st.session_state.error_message = "Failed to generate modification instructions"
+                st.rerun()
                 return
             
             # Check if updated_instructions contains clarifying questions (new JSON format)
@@ -1018,11 +1042,13 @@ def handle_template_modification_request(modification_request: str):
                 st.rerun()
                 
         except Exception as e:
-            st.error(f"❌ Error processing template modification request: {e}")
+            st.session_state.error_message = f"Error processing template modification request: {str(e)}"
+            st.rerun()
 
 def handle_goal_input(goal: str):
     """Handle goal input and generate detailed goal."""
     st.session_state.goal = goal
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating detailed goal..."):
         try:
@@ -1033,13 +1059,16 @@ def handle_goal_input(goal: str):
                 st.session_state.current_step = "goal_refinement"
                 st.rerun()
             else:
-                st.error("❌ I couldn't generate a detailed goal. Please try again with a more specific description.")
+                st.session_state.error_message = "I couldn't generate a detailed goal. Please try again with a more specific description."
+                st.rerun()
         except Exception as e:
-            st.error(f"❌ Error generating detailed goal: {e}")
+            st.session_state.error_message = f"Error generating detailed goal: {str(e)}"
+            st.rerun()
 
 def proceed_to_decomposition():
     """Proceed to task decomposition."""
     goal_to_use = st.session_state.enhanced_goal or st.session_state.detailed_goal or st.session_state.goal
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating step-by-step instructions..."):
         try:
@@ -1092,7 +1121,8 @@ def proceed_to_decomposition():
                 st.session_state.current_step = "decomposition_review"
                 st.rerun()
         except Exception as e:
-            st.error(f"❌ Error generating instructions: {e}")
+            st.session_state.error_message = f"Error generating instructions: {str(e)}"
+            st.rerun()
 
 def handle_clarification_selection(option: str):
     """Handle clarification question selection."""
@@ -1100,11 +1130,13 @@ def handle_clarification_selection(option: str):
         question_num = int(option.split("Question ")[1].split(":")[0])
         question_index = question_num - 1
     except (ValueError, IndexError):
-        st.error("❌ Error: Could not parse question number. Please try again.")
+        st.session_state.error_message = "Error: Could not parse question number. Please try again."
+        st.rerun()
         return
     
     if question_index < 0 or question_index >= len(st.session_state.parsed_questions):
-        st.error("❌ Error: Invalid question number. Please try again.")
+        st.session_state.error_message = "Error: Invalid question number. Please try again."
+        st.rerun()
         return
     
     st.session_state.current_question_index = question_index
@@ -1117,11 +1149,13 @@ def handle_improvement_clarification_selection(option: str):
         question_num = int(option.split("Question ")[1].split(":")[0])
         question_index = question_num - 1
     except (ValueError, IndexError):
-        st.error("❌ Error: Could not parse question number. Please try again.")
+        st.session_state.error_message = "Error: Could not parse question number. Please try again."
+        st.rerun()
         return
     
     if question_index < 0 or question_index >= len(st.session_state.chat_parsed_questions):
-        st.error("❌ Error: Invalid question number. Please try again.")
+        st.session_state.error_message = "Error: Invalid question number. Please try again."
+        st.rerun()
         return
     
     st.session_state.current_question_index = question_index
@@ -1134,11 +1168,13 @@ def handle_template_clarification_selection(option: str):
         question_num = int(option.split("Question ")[1].split(":")[0])
         question_index = question_num - 1
     except (ValueError, IndexError):
-        st.error("❌ Error: Could not parse question number. Please try again.")
+        st.session_state.error_message = "Error: Could not parse question number. Please try again."
+        st.rerun()
         return
     
     if question_index < 0 or question_index >= len(st.session_state.template_parsed_questions):
-        st.error("❌ Error: Invalid question number. Please try again.")
+        st.session_state.error_message = "Error: Invalid question number. Please try again."
+        st.rerun()
         return
     
     st.session_state.current_question_index = question_index
@@ -1198,6 +1234,7 @@ def proceed_to_generation():
 def generate_agent():
     """Generate the final agent."""
     current_instructions = st.session_state.final_instructions_json or st.session_state.final_instructions
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating your agent..."):
         try:
@@ -1209,7 +1246,8 @@ def generate_agent():
             )
             
             if error:
-                st.error(f"❌ Error generating agent: {error}")
+                st.session_state.error_message = f"Error generating agent: {error}"
+                st.rerun()
                 return
             
             # Success - agent generated
@@ -1232,11 +1270,13 @@ def generate_agent():
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Error during generation: {e}")
+            st.session_state.error_message = f"Error during generation: {str(e)}"
+            st.rerun()
 
 def generate_updated_agent():
     """Generate the updated agent based on the new instructions."""
     current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating your updated agent..."):
         try:
@@ -1249,7 +1289,8 @@ def generate_updated_agent():
             )
             
             if error:
-                st.error(f"❌ Error generating updated agent: {error}")
+                st.session_state.error_message = f"Error generating updated agent: {error}"
+                st.rerun()
                 return
             
             # Success - updated agent generated
@@ -1273,7 +1314,8 @@ def generate_updated_agent():
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Error during updated generation: {e}")
+            st.session_state.error_message = f"Error during updated generation: {str(e)}"
+            st.rerun()
 
 def handle_improvement_request(improvement_request: str):
     """Handle agent improvement request."""
@@ -1281,6 +1323,7 @@ def handle_improvement_request(improvement_request: str):
     st.session_state.current_agent_json = st.session_state.agent_json
     # Set the working agent JSON to the most recent one (this will be updated with each improvement)
     st.session_state.working_agent_json = st.session_state.agent_json
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Processing improvement request..."):
         try:
@@ -1296,7 +1339,8 @@ def handle_improvement_request(improvement_request: str):
             )
             
             if not updated_instructions:
-                st.error("❌ Failed to update instructions")
+                st.session_state.error_message = "Failed to update instructions"
+                st.rerun()
                 return
             
             # Check if updated_instructions contains clarifying questions (new JSON format)
@@ -1356,7 +1400,8 @@ def handle_improvement_request(improvement_request: str):
                 st.rerun()
                 
         except Exception as e:
-            st.error(f"❌ Error processing improvement request: {e}")
+            st.session_state.error_message = f"Error processing improvement request: {str(e)}"
+            st.rerun()
 
 def handle_improvement_question_answer(answer: str):
     """Handle user's answer to a clarifying question in improvement mode."""
@@ -1440,6 +1485,7 @@ def create_enhanced_template_modification_request_with_answers():
 
 def process_enhanced_improvement_request(enhanced_request: str):
     """Process the enhanced improvement request with answers."""
+    st.session_state.error_message = None  # Clear previous errors
     with st.spinner("Processing enhanced improvement request..."):
         try:
             # Use the most recent instructions - either updated_instructions from previous chat or original
@@ -1454,7 +1500,8 @@ def process_enhanced_improvement_request(enhanced_request: str):
             )
             
             if not updated_instructions:
-                st.error("❌ Failed to update instructions")
+                st.session_state.error_message = "Failed to update instructions"
+                st.rerun()
                 return
             
             # Handle the updated instructions (should be instructions now, not questions)
@@ -1486,10 +1533,12 @@ def process_enhanced_improvement_request(enhanced_request: str):
                 st.rerun()
                 
         except Exception as e:
-            st.error(f"❌ Error processing enhanced improvement request: {e}")
+            st.session_state.error_message = f"Error processing enhanced improvement request: {str(e)}"
+            st.rerun()
 
 def process_enhanced_template_modification_request(enhanced_request: str):
     """Process the enhanced template modification request with answers."""
+    st.session_state.error_message = None  # Clear previous errors
     with st.spinner("Processing enhanced template modification request..."):
         try:
             # Generate instructions based on the template and enhanced modification request
@@ -1502,7 +1551,8 @@ def process_enhanced_template_modification_request(enhanced_request: str):
             )
             
             if not updated_instructions:
-                st.error("❌ Failed to generate modification instructions")
+                st.session_state.error_message = "Failed to generate modification instructions"
+                st.rerun()
                 return
             
             # Handle the updated instructions (should be instructions now, not questions)
@@ -1533,11 +1583,13 @@ def process_enhanced_template_modification_request(enhanced_request: str):
                 st.rerun()
                 
         except Exception as e:
-            st.error(f"❌ Error processing enhanced template modification request: {e}")
+            st.session_state.error_message = f"Error processing enhanced template modification request: {str(e)}"
+            st.rerun()
 
 def generate_modified_agent_from_template():
     """Generate the modified agent based on template and modification instructions."""
     current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
+    st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating your modified agent..."):
         try:
@@ -1550,7 +1602,8 @@ def generate_modified_agent_from_template():
             )
             
             if error:
-                st.error(f"❌ Error generating modified agent: {error}")
+                st.session_state.error_message = f"Error generating modified agent: {error}"
+                st.rerun()
                 return
             
             # Success - modified agent generated
@@ -1574,7 +1627,8 @@ def generate_modified_agent_from_template():
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Error during generation: {e}")
+            st.session_state.error_message = f"Error during generation: {str(e)}"
+            st.rerun()
 
 # =============================================================================
 # MAIN APPLICATION
