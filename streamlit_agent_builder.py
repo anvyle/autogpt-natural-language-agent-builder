@@ -95,6 +95,7 @@ def initialize_session_state():
         'template_parsed_questions': [],
         'template_question_answers': {},
         'error_message': None,  # To store error messages for UI display
+        'auto_mode': True,  # Auto mode for automatic execution
     }
     
     for key, default_value in session_vars.items():
@@ -264,6 +265,7 @@ def reset_chat():
     st.session_state.template_parsed_questions = []
     st.session_state.template_question_answers = {}
     st.session_state.error_message = None
+    st.session_state.auto_mode = False  # Reset auto mode
 
 # =============================================================================
 # STAGE-SPECIFIC UI RENDERING
@@ -285,6 +287,23 @@ def render_welcome_stage():
     st.info("🤖 **Welcome to AutoGPT Agent Builder!**")
     st.write("I'm here to help you create AI agents through natural conversation. What would you like to do?")
     
+    # Auto mode toggle
+    st.markdown("---")
+    st.markdown("**⚙️ Execution Mode**")
+    auto_mode = st.checkbox(
+        "🚀 Auto Mode", 
+        value=st.session_state.auto_mode,
+        help="Enable automatic execution - all steps will be processed automatically except clarifying questions"
+    )
+    st.session_state.auto_mode = auto_mode
+    
+    if auto_mode:
+        st.success("✅ Auto mode enabled - agent generation will be fully automated!")
+    else:
+        st.info("ℹ️ Manual mode - you'll review each step before proceeding")
+    
+    st.markdown("---")
+    
     # Display options
     options = [
         "Create New Agent",
@@ -305,6 +324,10 @@ def render_goal_input_stage():
     st.title("🎯 Define Your Goal")
     st.markdown("**Step 1: Define Your Goal**")
     
+    # Auto mode indicator
+    if st.session_state.auto_mode:
+        st.success("🚀 **Auto Mode Active** - All steps will be processed automatically")
+    
     st.write("Please describe what you want your agent to do. Be as specific as possible about the task, inputs, outputs, and any special requirements.")
     
     # Show current goal if available
@@ -323,6 +346,15 @@ def render_goal_refinement_stage():
     if st.session_state.detailed_goal:
         st.write("✅ I've generated a detailed goal based on your description:")
         st.info(f"**Detailed Goal:**\n{st.session_state.detailed_goal}")
+        
+        # Auto mode indicator
+        if st.session_state.auto_mode:
+            st.success("🚀 **Auto Mode Active** - Proceeding automatically...")
+            # Auto-proceed after a short delay
+            import time
+            time.sleep(1)
+            proceed_to_decomposition()
+            return
         
         # Options
         col1, col2 = st.columns(2)
@@ -374,6 +406,10 @@ def render_clarification_stage():
     st.title("❓ Clarifying Questions")
     st.markdown("**Step 2: Additional Information**")
     
+    # Auto mode indicator - clarification always requires user input
+    if st.session_state.auto_mode:
+        st.info("🚀 **Auto Mode Active** - This step requires your input to answer clarifying questions")
+    
     # Determine which questions to show based on mode
     if st.session_state.improvement_mode:
         questions = st.session_state.chat_parsed_questions
@@ -405,6 +441,10 @@ def render_answering_question_stage():
     render_error_message()
     st.title("❓ Answer Question")
     st.markdown("**Step 2: Answer Question**")
+    
+    # Auto mode indicator - answering questions always requires user input
+    if st.session_state.auto_mode:
+        st.info("🚀 **Auto Mode Active** - Please answer this question to continue")
     
     # Determine which questions to show based on mode
     if st.session_state.improvement_mode:
@@ -440,6 +480,15 @@ def render_decomposition_review_stage():
             st.write("✅ I've updated the instructions based on your request:")
             st.text_area("Updated Instructions:", instructions_to_show, height=300, disabled=True)
             
+            # Auto mode indicator
+            if st.session_state.auto_mode:
+                st.success("🚀 **Auto Mode Active** - Generating updated agent automatically...")
+                # Auto-proceed after a short delay
+                import time
+                time.sleep(1)
+                generate_updated_agent()
+                return
+            
             # Options for improvement mode
             col1, col2 = st.columns(2)
             with col1:
@@ -459,6 +508,15 @@ def render_decomposition_review_stage():
         if st.session_state.current_decomposition:
             st.write("✅ I've generated step-by-step instructions for your goal:")
             st.text_area("Instructions:", st.session_state.current_decomposition, height=300, disabled=True)
+            
+            # Auto mode indicator
+            if st.session_state.auto_mode:
+                st.success("🚀 **Auto Mode Active** - Proceeding to final review automatically...")
+                # Auto-proceed after a short delay
+                import time
+                time.sleep(1)
+                proceed_to_generation()
+                return
             
             # Options for initial creation
             col1, col2 = st.columns(2)
@@ -488,6 +546,15 @@ def render_final_stage():
             st.write("✅ Updated instructions finalized! Ready to generate your updated agent.")
             st.text_area("Final Updated Instructions:", instructions_to_show, height=300, disabled=True)
             
+            # Auto mode indicator
+            if st.session_state.auto_mode:
+                st.success("🚀 **Auto Mode Active** - Generating updated agent automatically...")
+                # Auto-proceed after a short delay
+                import time
+                time.sleep(1)
+                generate_updated_agent()
+                return
+            
             # Options for improvement mode
             col1, col2 = st.columns(2)
             with col1:
@@ -507,6 +574,15 @@ def render_final_stage():
         if st.session_state.final_instructions:
             st.write("✅ Instructions finalized! Ready to generate your agent.")
             st.text_area("Final Instructions:", st.session_state.final_instructions, height=300, disabled=True)
+            
+            # Auto mode indicator
+            if st.session_state.auto_mode:
+                st.success("🚀 **Auto Mode Active** - Generating agent automatically...")
+                # Auto-proceed after a short delay
+                import time
+                time.sleep(1)
+                generate_agent()
+                return
             
             # Options for initial creation
             col1, col2 = st.columns(2)
@@ -857,7 +933,7 @@ def handle_option_selection(option: str):
     """Handle option selection based on current step."""
     if st.session_state.current_step == "welcome":
         if option == "Create New Agent":
-            start_new_agent_creation()
+            start_create_new_agent()
         elif option == "Modify Template Agent":
             start_template_modification()
     elif st.session_state.current_step == "goal_refinement":
@@ -946,6 +1022,10 @@ def handle_option_selection(option: str):
 
 def start_new_agent_creation():
     """Start the new agent creation process."""
+    st.session_state.current_step = "welcome"
+
+def start_create_new_agent():
+    """Start creating a new agent from the welcome page."""
     st.session_state.current_step = "goal_input"
 
 def start_agent_improvement():
