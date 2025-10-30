@@ -265,7 +265,6 @@ def reset_chat():
     st.session_state.template_parsed_questions = []
     st.session_state.template_question_answers = {}
     st.session_state.error_message = None
-    st.session_state.auto_mode = False  # Reset auto mode
 
 # =============================================================================
 # STAGE-SPECIFIC UI RENDERING
@@ -683,6 +682,10 @@ def render_template_upload_stage():
     st.title("📁 Template Agent Upload")
     st.markdown("**Template Agent Modification Mode**")
     
+    # Auto mode indicator
+    if st.session_state.auto_mode:
+        st.success("🚀 **Auto Mode Active** - Template modification will be automated")
+    
     st.write("I'll help you modify an existing agent template. First, please upload your template agent.json file.")
     
     render_template_upload()
@@ -692,6 +695,10 @@ def render_template_instructions_stage():
     render_error_message()
     st.title("📝 Template Modifications")
     st.markdown("**Step 2: Describe Modifications**")
+    
+    # Auto mode indicator
+    if st.session_state.auto_mode:
+        st.success("🚀 **Auto Mode Active** - All steps will be processed automatically")
     
     if st.session_state.template_agent_json:
         agent_json = st.session_state.template_agent_json
@@ -710,6 +717,15 @@ def render_template_modification_review_stage():
     if st.session_state.updated_instructions:
         st.write("✅ I've generated modified instructions based on your template and request:")
         st.text_area("Modified Instructions:", st.session_state.updated_instructions, height=300, disabled=True)
+        
+        # Auto mode indicator
+        if st.session_state.auto_mode:
+            st.success("🚀 **Auto Mode Active** - Generating modified agent automatically...")
+            # Auto-proceed after a short delay
+            import time
+            time.sleep(1)
+            generate_modified_agent_from_template()
+            return
         
         # Options
         col1, col2 = st.columns(2)
