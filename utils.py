@@ -623,6 +623,42 @@ class AgentFixer:
         
         return agent
     
+    async def fix_node_positions_scale(self, agent: Dict[str, Any], scale_factor: float = 1.5) -> Dict[str, Any]:
+        """
+        Scale node positions by a given factor (default 2x).
+        This increases the spacing between nodes in the visual graph editor.
+        
+        Args:
+            agent: The agent dictionary to fix
+            scale_factor: The factor to scale positions by (default 2.0 for doubling)
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        scaled_count = 0
+        
+        for node in nodes:
+            metadata = node.get("metadata", {})
+            position = metadata.get("position", {})
+            
+            if "x" in position and "y" in position:
+                old_x = position["x"]
+                old_y = position["y"]
+                
+                position["x"] = old_x * scale_factor
+                position["y"] = old_y * scale_factor
+                
+                scaled_count += 1
+                self.add_fix_log(
+                    f"Scaled node {node.get('id')} position: ({old_x}, {old_y}) -> ({position['x']}, {position['y']})"
+                )
+        
+        if scaled_count > 0:
+            logging.info(f"Scaled positions for {scaled_count} nodes by factor {scale_factor}")
+        
+        return agent
+    
     async def apply_all_fixes(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Apply all available fixes to the agent.
@@ -644,6 +680,7 @@ class AgentFixer:
         agent = await self.fix_addtodictionary_blocks(agent)
         agent = await self.fix_code_execution_output(agent)
         agent = await self.fix_data_sampling_sample_size(agent)
+        agent = await self.fix_node_positions_scale(agent)
         
         # Apply link static properties fix if blocks are provided
         if blocks:
