@@ -601,15 +601,18 @@ def render_final_stage():
 def render_agent_results_stage():
     """Render the agent results stage."""
     render_error_message()
-    # Determine if this is an updated agent or initial agent
-    if st.session_state.generation_counter > 0:
-        st.title(f"🎉 Updated Agent #{st.session_state.generation_counter} Generated!")
-        st.markdown("**Step 5: Your Updated Agent is Ready**")
-    else:
-        st.title("🎉 Agent Generated!")
-        st.markdown("**Step 5: Your Agent is Ready**")
     
+    # Check if agent generation was successful
     if st.session_state.agent_json:
+        # Success case - display agent
+        # Determine if this is an updated agent or initial agent
+        if st.session_state.generation_counter > 0:
+            st.title(f"🎉 Updated Agent #{st.session_state.generation_counter} Generated!")
+            st.markdown("**Step 5: Your Updated Agent is Ready**")
+        else:
+            st.title("🎉 Agent Generated!")
+            st.markdown("**Step 5: Your Agent is Ready**")
+        
         agent_json = st.session_state.agent_json
         filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_json.get("name", "agent")).strip('_')[:50]
         
@@ -652,6 +655,30 @@ def render_agent_results_stage():
             if st.button("🔧 Improve This Agent", key="improve_agent", use_container_width=True):
                 st.session_state.selected_option = "Improve This Agent"
                 handle_option_selection("Improve This Agent")
+                st.rerun()
+    else:
+        # Failure case - generation failed
+        st.title("❌ Agent Generation Failed")
+        st.markdown("**Step 5: Generation Error**")
+        
+        st.error("The agent could not be generated. Please review the error above and try again.")
+        
+        # Options for failure case
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🔄 Try Again", key="retry_generation", use_container_width=True):
+                # Go back to the final step to retry generation
+                st.session_state.current_step = "final"
+                st.rerun()
+        with col2:
+            if st.button("✏️ Edit Instructions", key="edit_from_failure", use_container_width=True):
+                # Go back to decomposition review to edit instructions
+                st.session_state.current_step = "decomposition_review"
+                st.rerun()
+        with col3:
+            if st.button("🆕 Start New Agent", key="start_new_from_failure", use_container_width=True):
+                st.session_state.selected_option = "Start New Agent"
+                handle_option_selection("Start New Agent")
                 st.rerun()
 
 def render_agent_chat_stage():
@@ -1337,37 +1364,37 @@ def generate_agent():
             agent_json, error = asyncio.run(
                 generate_agent_json_from_subtasks(
                     current_instructions,
-                    blocks
+                    blocks,
+                    max_retries=1
                 )
             )
             
             if error:
                 st.session_state.error_message = f"Error generating agent: {error}"
-                st.rerun()
-                return
-            
-            # Success - agent generated
-            st.session_state.agent_json = agent_json
-            st.session_state.working_agent_json = agent_json
-            
-            # Save agent
-            agent_name = agent_json.get("name", "agent")
-            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-            agent_json_path = OUTPUT_DIR / f"{filename}.json"
-            
-            try:
-                with open(agent_json_path, "w", encoding="utf-8") as f:
-                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-            # Display results
-            st.session_state.current_step = "agent_results"
-            st.rerun()
+                st.session_state.agent_json = None
+            else:
+                # Success - agent generated
+                st.session_state.agent_json = agent_json
+                st.session_state.working_agent_json = agent_json
+                
+                # Save agent
+                agent_name = agent_json.get("name", "agent")
+                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                
+                try:
+                    with open(agent_json_path, "w", encoding="utf-8") as f:
+                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
             
         except Exception as e:
             st.session_state.error_message = f"Error during generation: {str(e)}"
-            st.rerun()
+            st.session_state.agent_json = None
+    
+    # Always go to agent_results step, even on failure
+    st.session_state.current_step = "agent_results"
+    st.rerun()
 
 def generate_updated_agent():
     """Generate the updated agent based on the new instructions."""
@@ -1380,38 +1407,38 @@ def generate_updated_agent():
                 update_agent_json_incrementally(
                     current_instructions,
                     st.session_state.working_agent_json,  # Use the working agent JSON
-                    blocks
+                    blocks,
+                    max_retries=1
                 )
             )
             
             if error:
                 st.session_state.error_message = f"Error generating updated agent: {error}"
-                st.rerun()
-                return
-            
-            # Success - updated agent generated
-            st.session_state.agent_json = agent_json
-            st.session_state.working_agent_json = agent_json  # Update working agent JSON for next improvement iteration
-            st.session_state.generation_counter += 1  # Increment generation counter
-            
-            # Save agent
-            agent_name = agent_json.get("name", "agent")
-            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-            agent_json_path = OUTPUT_DIR / f"{filename}.json"
-            
-            try:
-                with open(agent_json_path, "w", encoding="utf-8") as f:
-                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-            # Display results
-            st.session_state.current_step = "agent_results"
-            st.rerun()
+                st.session_state.agent_json = None
+            else:
+                # Success - updated agent generated
+                st.session_state.agent_json = agent_json
+                st.session_state.working_agent_json = agent_json  # Update working agent JSON for next improvement iteration
+                st.session_state.generation_counter += 1  # Increment generation counter
+                
+                # Save agent
+                agent_name = agent_json.get("name", "agent")
+                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                
+                try:
+                    with open(agent_json_path, "w", encoding="utf-8") as f:
+                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
             
         except Exception as e:
             st.session_state.error_message = f"Error during updated generation: {str(e)}"
-            st.rerun()
+            st.session_state.agent_json = None
+    
+    # Always go to agent_results step, even on failure
+    st.session_state.current_step = "agent_results"
+    st.rerun()
 
 def handle_improvement_request(improvement_request: str):
     """Handle agent improvement request."""
@@ -1693,38 +1720,38 @@ def generate_modified_agent_from_template():
                 update_agent_json_incrementally(
                     current_instructions,
                     st.session_state.template_agent_json,  # Use template as base
-                    blocks
+                    blocks,
+                    max_retries=1
                 )
             )
             
             if error:
                 st.session_state.error_message = f"Error generating modified agent: {error}"
-                st.rerun()
-                return
-            
-            # Success - modified agent generated
-            st.session_state.agent_json = agent_json
-            st.session_state.working_agent_json = agent_json
-            st.session_state.generation_counter += 1
-            
-            # Save agent
-            agent_name = agent_json.get("name", "agent")
-            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-            agent_json_path = OUTPUT_DIR / f"{filename}.json"
-            
-            try:
-                with open(agent_json_path, "w", encoding="utf-8") as f:
-                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-            # Display results
-            st.session_state.current_step = "agent_results"
-            st.rerun()
+                st.session_state.agent_json = None
+            else:
+                # Success - modified agent generated
+                st.session_state.agent_json = agent_json
+                st.session_state.working_agent_json = agent_json
+                st.session_state.generation_counter += 1
+                
+                # Save agent
+                agent_name = agent_json.get("name", "agent")
+                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                
+                try:
+                    with open(agent_json_path, "w", encoding="utf-8") as f:
+                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
             
         except Exception as e:
             st.session_state.error_message = f"Error during generation: {str(e)}"
-            st.rerun()
+            st.session_state.agent_json = None
+    
+    # Always go to agent_results step, even on failure
+    st.session_state.current_step = "agent_results"
+    st.rerun()
 
 # =============================================================================
 # MAIN APPLICATION
