@@ -22,7 +22,6 @@ from agent_builder import (
     decompose_description, 
     get_block_summaries, 
     generate_agent_json_from_subtasks,
-    generate_detailed_goal,
     update_decomposition_incrementally,
     update_agent_json_incrementally,
     generate_template_modification_instructions,
@@ -60,7 +59,6 @@ def initialize_session_state():
         'chat_messages': [],
         'current_step': "welcome",
         'goal': None,
-        'detailed_goal': None,
         'current_decomposition': None,
         'current_decomposition_json': None,  # Raw JSON instructions
         'final_instructions': None,
@@ -230,7 +228,6 @@ def reset_chat():
     st.session_state.chat_messages = []
     st.session_state.current_step = "welcome"
     st.session_state.goal = None
-    st.session_state.detailed_goal = None
     st.session_state.current_decomposition = None
     st.session_state.current_decomposition_json = None
     st.session_state.final_instructions = None
@@ -332,41 +329,11 @@ def render_goal_input_stage():
     # Show current goal if available
     if st.session_state.goal:
         st.info(f"**Current Goal:** {st.session_state.goal}")
+        st.write("Your goal has been saved. Processing...")
     
     # Input area
     render_input_area()
 
-def render_goal_refinement_stage():
-    """Render the goal refinement stage."""
-    render_error_message()
-    st.title("🎯 Review Your Goal")
-    st.markdown("**Step 1: Review Your Goal**")
-    
-    if st.session_state.detailed_goal:
-        st.write("✅ I've generated a detailed goal based on your description:")
-        st.info(f"**Detailed Goal:**\n{st.session_state.detailed_goal}")
-        
-        # Auto mode indicator
-        if st.session_state.auto_mode:
-            st.success("🚀 **Auto Mode Active** - Proceeding automatically...")
-            # Auto-proceed after a short delay
-            import time
-            time.sleep(1)
-            proceed_to_decomposition()
-            return
-        
-        # Options
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Use as is", key="use_goal", use_container_width=True):
-                st.session_state.selected_option = "Use as is"
-                handle_option_selection("Use as is")
-                st.rerun()
-        with col2:
-            if st.button("✏️ Edit goal", key="edit_goal", use_container_width=True):
-                st.session_state.selected_option = "Edit goal"
-                handle_option_selection("Edit goal")
-                st.rerun()
 
 def render_goal_suggestion_stage():
     """Render the goal suggestion stage."""
@@ -775,8 +742,6 @@ def render_current_stage():
         render_welcome_stage()
     elif current_step == "goal_input":
         render_goal_input_stage()
-    elif current_step == "goal_refinement":
-        render_goal_refinement_stage()
     elif current_step == "goal_suggestion":
         render_goal_suggestion_stage()
     elif current_step == "clarification":
@@ -979,12 +944,6 @@ def handle_option_selection(option: str):
             start_create_new_agent()
         elif option == "Modify Template Agent":
             start_template_modification()
-    elif st.session_state.current_step == "goal_refinement":
-        if option == "Use as is":
-            proceed_to_decomposition()
-        elif option == "Edit goal":
-            st.session_state.current_step = "goal_input"
-            st.rerun()
     elif st.session_state.current_step == "goal_suggestion":
         if option == "Use Suggested Goal":
             # Use the suggested goal from the last decomposition response
@@ -993,7 +952,6 @@ def handle_option_selection(option: str):
                     suggested_goal = st.session_state.last_decomposition.get("suggested_goal", "")
                     if suggested_goal:
                         st.session_state.goal = suggested_goal
-                        st.session_state.detailed_goal = suggested_goal
                         proceed_to_decomposition()
                     else:
                         st.error("❌ No suggested goal available. Please try a different goal.")
@@ -1169,28 +1127,16 @@ def handle_template_modification_request(modification_request: str):
             st.rerun()
 
 def handle_goal_input(goal: str):
-    """Handle goal input and generate detailed goal."""
+    """Handle goal input and proceed directly to decomposition."""
     st.session_state.goal = goal
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Generating detailed goal..."):
-        try:
-            detailed_goal = asyncio.run(generate_detailed_goal(goal, block_summaries))
-            
-            if detailed_goal:
-                st.session_state.detailed_goal = detailed_goal
-                st.session_state.current_step = "goal_refinement"
-                st.rerun()
-            else:
-                st.session_state.error_message = "I couldn't generate a detailed goal. Please try again with a more specific description."
-                st.rerun()
-        except Exception as e:
-            st.session_state.error_message = f"Error generating detailed goal: {str(e)}"
-            st.rerun()
+    # Skip detailed goal generation and go directly to decomposition
+    proceed_to_decomposition()
 
 def proceed_to_decomposition():
     """Proceed to task decomposition."""
-    goal_to_use = st.session_state.enhanced_goal or st.session_state.detailed_goal or st.session_state.goal
+    goal_to_use = st.session_state.enhanced_goal or st.session_state.goal
     st.session_state.error_message = None  # Clear previous errors
     
     with st.spinner("Generating step-by-step instructions..."):
@@ -1333,7 +1279,7 @@ def handle_question_answer(answer: str):
 
 def create_enhanced_goal_with_answers():
     """Create an enhanced goal by integrating clarifying question answers."""
-    base_goal = st.session_state.detailed_goal or st.session_state.goal
+    base_goal = st.session_state.goal
     
     if not st.session_state.question_answers:
         return base_goal

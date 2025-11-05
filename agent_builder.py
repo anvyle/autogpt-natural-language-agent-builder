@@ -433,53 +433,6 @@ Refer to the following example JSON of a working agent for structure. Your task 
 {used_blocks}
 """
 
-DETAILED_GOAL_SYSTEM_PROMPT_TEMPLATE = """
-You are an expert AutoGPT Goal Refiner. Your task is to take a user's rough goal and transform it into a detailed, specific, and actionable goal that can be accomplished using AutoGPT's available blocks.
-
-**Your goal is to:**
-1. Analyze the rough goal and understand the user's intent
-2. Identify what specific details, inputs, and outputs are needed
-3. Create a comprehensive, detailed goal that includes all necessary information
-4. Ensure the goal is specific enough to be broken down into actionable steps
-5. Make sure the goal can be accomplished using the available blocks
-
----
-
-📝 **GUIDELINES:**
-1. Be specific about inputs, outputs, and expected results
-2. Include relevant details like file types, data sources, formats, etc.
-3. Specify any constraints or requirements
-4. Make the goal concrete and measurable
-5. Ensure it aligns with the capabilities of the available blocks
-
----
-
-🚫 **RESTRICTIONS:**
-1. **DO NOT ask clarifying questions** - instead, make reasonable assumptions and be specific
-2. **DO NOT include step-by-step instructions** - just the detailed goal
-3. Focus on **WHAT** needs to be accomplished, not **HOW** to accomplish it
-4. Keep the goal focused and avoid scope creep
-
----
-
-📋 **OUTPUT FORMAT:**
-Return **ONLY** the detailed goal as a single paragraph. Make it comprehensive and specific.
-
----
-
-🧱 **Available Blocks:**
-{block_summaries}
-
----
-
-💡 Example:
-Rough Goal: "Create a weather report"
-Detailed Goal: "Create a comprehensive daily weather report that fetches current weather data for a specified location, analyzes temperature trends, generates a formatted report with current conditions, forecast, and recommendations, and outputs the report in a readable text format suitable for sharing via email or messaging platforms."
-"""
-
-DETAILED_GOAL_HUMAN_PROMPT_TEMPLATE = """
-Rough Goal: {rough_goal}
-"""
 
 INCREMENTAL_UPDATE_SYSTEM_PROMPT_TEMPLATE = """
 You are an expert AutoGPT Workflow Updater. Your task is to update existing step-by-step instructions based on a user's improvement request, while preserving the original structure and only modifying parts that need changes.
@@ -1259,15 +1212,6 @@ def get_agent_generation_prompt(used_blocks: list, example: str) -> str:
         example=example
     )
 
-def get_detailed_goal_system_prompt(block_summaries: list) -> str:
-    """Get the detailed goal system prompt with block summaries."""
-    return DETAILED_GOAL_SYSTEM_PROMPT_TEMPLATE.format(
-        block_summaries=json.dumps(block_summaries, indent=2)
-    )
-
-def get_detailed_goal_human_prompt(rough_goal: str) -> str:
-    """Get the detailed goal human prompt with rough goal."""
-    return DETAILED_GOAL_HUMAN_PROMPT_TEMPLATE.format(rough_goal=rough_goal)
 
 def get_incremental_update_system_prompt(block_summaries: list) -> str:
     """Get the incremental update system prompt with block summaries."""
@@ -1758,26 +1702,6 @@ ORIGINAL INSTRUCTIONS:
     
     return None, "Failed to update agent after maximum retries"
 
-async def generate_detailed_goal(rough_goal, block_summaries):
-    """Generate a detailed, actionable goal from a rough user goal."""
-    logging.info(f"Generating detailed goal from: {rough_goal}")
-    llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-
-    system_prompt = get_detailed_goal_system_prompt(block_summaries)
-    human_prompt = get_detailed_goal_human_prompt(rough_goal)
-
-    try:
-        response = await llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt)
-        ])
-        if response is None:
-            logging.error("❌ No response received from LLM")
-            return None
-        return str(response.content).strip()
-    except Exception as e:
-        logging.error(f"❌ Error generating detailed goal: {e}")
-        return None
 
 async def generate_template_modification_instructions(template_agent_json, modification_request, block_summaries, current_instructions=None):
     """
