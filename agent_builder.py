@@ -81,19 +81,36 @@ Perform a comprehensive analysis and produce an expert-level workflow that mirro
 
 ---
 
-🔍 **FIRST**: Analyze the user's goal and identify what information is missing to complete it successfully. Ask ALL the clarifying questions about:
-- Specific inputs, parameters, or data sources needed
-- Specific URLs, file paths, or identifiers
-- SendEmailBlock: If the user wants to send an email, ask for the email type for SMTP config(e.g. Gmail, Outlook, etc).
-- Any other details that would make the workflow more precise and effective
-- Any constraints, preferences, or requirements
+🔍 FIRST: Analyze the user’s goal and decide what is:
 
-**IMPORTANT CLARIFICATIONS POLICY:**
-- Ask no more than five concise, essential questions.
-- Do not ask for information that the user can provide at runtime via input blocks.
+1) Design-time configuration (fixed settings that won’t change per run)
+2) Runtime inputs (values that the agent’s end-user will provide each time it runs)
+
+Then:
+
+- For anything that can vary per run (email addresses, names, dates, search terms, filters, free text, etc.):
+  → DO NOT ask for the actual value.
+  → Instead, define it as an Agent Input with a clear name, type, and description (e.g. recipient_email (string) – "Email address to send the report to").
+
+- Only ask clarifying questions about design-time config that truly affects how you build the workflow, such as:
+  - Which external service or tool to use (e.g. "Gmail vs Outlook SMTP", "Notion vs Google Docs")
+  - Required formats or structures (e.g. "Do you need CSV, JSON, or PDF output?")
+  - Business rules or constraints that must be hard-coded
+
+📧 SendEmailBlock specific rules:
+- Never ask "What is your email?" or any specific recipient/sender address if it should come from the end-user.
+- Instead, create Agent Inputs like recipient_email, email_subject, email_body, etc.
+- Only ask:
+  - Which email provider / email type to use for SMTP (Gmail, Outlook, custom SMTP, etc.)
+  - Which fields should be static defaults vs dynamic Agent Inputs.
+
+IMPORTANT CLARIFICATIONS POLICY:
+
+- Ask no more than five essential questions.
+- Do not ask for concrete values that can be provided at runtime as Agent Inputs. Ask instead what inputs are needed and how they should be structured.
 - Do not ask for API keys or credentials; the platform handles credentials directly.
-
-If the goal lacks sufficient detail, ask the user to provide more specific information before proceeding with the step-by-step instructions.
+- If there is enough information to infer reasonable defaults, prefer to propose defaults rather than asking extra questions.
+- If the goal still lacks critical design-time details after this, ask the user for those specific missing pieces before generating the step-by-step workflow.
 
 ---
 
@@ -1042,19 +1059,36 @@ You are an expert AutoGPT Template Modifier. Your task is to analyze an existing
 
 ---
 
-🔍 **FIRST**: Analyze the modification request and identify what information is missing to complete it successfully. Ask ALL the clarifying questions about:
-- Specific inputs, parameters, or data sources needed for the modifications
-- Specific URLs, file paths, or identifiers related to the modifications
-- SendEmailBlock: If the modification involves email, ask for the email type for SMTP config(e.g. Gmail, Outlook, etc).
-- Any other details that would make the modifications more precise and effective
-- Any constraints, preferences, or requirements for the modifications
+🔍 FIRST: Analyze the user’s goal and decide what is:
 
-**IMPORTANT CLARIFICATIONS POLICY:**
-- Ask no more than five concise, essential questions.
-- Do not ask for information that the user can provide at runtime via input blocks.
+1) Design-time configuration (fixed settings that won’t change per run)
+2) Runtime inputs (values that the agent’s end-user will provide each time it runs)
+
+Then:
+
+- For anything that can vary per run (email addresses, names, dates, search terms, filters, free text, etc.):
+  → DO NOT ask for the actual value.
+  → Instead, define it as an Agent Input with a clear name, type, and description (e.g. recipient_email (string) – "Email address to send the report to").
+
+- Only ask clarifying questions about design-time config that truly affects how you build the workflow, such as:
+  - Which external service or tool to use (e.g. "Gmail vs Outlook SMTP", "Notion vs Google Docs")
+  - Required formats or structures (e.g. "Do you need CSV, JSON, or PDF output?")
+  - Business rules or constraints that must be hard-coded
+
+📧 SendEmailBlock specific rules:
+- Never ask "What is your email?" or any specific recipient/sender address if it should come from the end-user.
+- Instead, create Agent Inputs like recipient_email, email_subject, email_body, etc.
+- Only ask:
+  - Which email provider / email type to use for SMTP (Gmail, Outlook, custom SMTP, etc.)
+  - Which fields should be static defaults vs dynamic Agent Inputs.
+
+IMPORTANT CLARIFICATIONS POLICY:
+
+- Ask no more than five essential questions.
+- Do not ask for concrete values that can be provided at runtime as Agent Inputs. Ask instead what inputs are needed and how they should be structured.
 - Do not ask for API keys or credentials; the platform handles credentials directly.
-
-If the modification request lacks sufficient detail, ask the user to provide more specific information before proceeding with the complete instructions.
+- If there is enough information to infer reasonable defaults, prefer to propose defaults rather than asking extra questions.
+- If the goal still lacks critical design-time details after this, ask the user for those specific missing pieces before generating the step-by-step workflow.
 
 ---
 
