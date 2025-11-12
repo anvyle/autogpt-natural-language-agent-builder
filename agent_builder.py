@@ -18,7 +18,7 @@ OUTPUT_DIR = Path(f"generated_agents/{datetime.now().strftime('%Y%m%d')}")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL = "gemini-2.5-pro-preview-03-25"
 
-BLOCK_FILE = "./data/blocks_2025_10_25.json"
+BLOCK_FILE = "./data/blocks_2025_11_11.json"
 EXAMPLE_FILE = "./data/Resume_Rater_AI.json"
 
 # =============================================================================
