@@ -18,7 +18,7 @@ OUTPUT_DIR = Path(f"generated_agents/{datetime.now().strftime('%Y%m%d')}")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL = "gemini-2.5-pro-preview-03-25"
 
-BLOCK_FILE = "./data/blocks_2025_11_11.json"
+BLOCK_FILE = "./data/blocks_2025_10_25_edited.json"
 EXAMPLE_FILE = "./data/Resume_Rater_AI.json"
 
 # =============================================================================
@@ -377,7 +377,7 @@ Each node represents a block (input, logic, LLM, output, etc). Every node must i
 - `id`: A unique UUID v4 for the node (e.g. `a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b`)
 - `block_id`: The identifier of the block used (must match one of the Allowed Blocks)
 - `input_default`: A dict of inputs to this block (can be empty if no static inputs are needed)
-- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`
+- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`. To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
 - `graph_id` and `graph_version`: Inherit from the parent graph
 
 ---
@@ -849,7 +849,7 @@ Each node represents a block (input, logic, LLM, output, etc). Every node must i
 - `id`: A unique UUID v4 for the node (e.g. `a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b`)
 - `block_id`: The identifier of the block used (must match one of the Allowed Blocks)
 - `input_default`: A dict of inputs to this block (can be empty if no static inputs are needed)
-- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`
+- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`. To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
 - `graph_id` and `graph_version`: Inherit from the parent graph
 
 ---
