@@ -623,114 +623,59 @@ class AgentFixer:
         
         return agent
     
-    async def fix_node_positions_scale(self, agent: Dict[str, Any], target_distance: float = 1000.0) -> Dict[str, Any]:
+    async def fix_ai_model_parameter(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]], default_model: str = "gpt-4o") -> Dict[str, Any]:
         """
-        Normalize node positions to maintain a consistent distance between connected nodes.
-        This ensures spacing remains constant even if the function is called multiple times.
+        Add default model parameter to AI blocks if missing.
+        
+        For nodes whose block has category "AI", this function ensures that the
+        input_default has a "model" parameter. If missing, it adds the default model.
         
         Args:
             agent: The agent dictionary to fix
-            target_distance: The target distance between connected nodes (default 700)
+            blocks: List of available blocks with their schemas
+            default_model: The default model to use (default "gpt-4o")
             
         Returns:
             The fixed agent dictionary
         """
-        # Check if positions have already been normalized
-        graph_metadata = agent.get("graph_metadata", {})
-        if graph_metadata.get("positions_normalized", False):
-            logging.info("Node positions already normalized, skipping scaling")
-            return agent
+        # Create a mapping of block_id to block for quick lookup
+        block_map = {block.get("id"): block for block in blocks}
         
         nodes = agent.get("nodes", [])
-        links = agent.get("links", [])
+        fixed_count = 0
         
-        if len(nodes) < 2:
-            # Mark as normalized even if no scaling needed
-            if "graph_metadata" not in agent:
-                agent["graph_metadata"] = {}
-            agent["graph_metadata"]["positions_normalized"] = True
-            return agent
-        
-        # Calculate current average distance between connected nodes
-        distances = []
-        for link in links:
-            source_id = link.get("source_id")
-            sink_id = link.get("sink_id")
-            
-            source_node = next((n for n in nodes if n.get("id") == source_id), None)
-            sink_node = next((n for n in nodes if n.get("id") == sink_id), None)
-            
-            if source_node and sink_node:
-                source_pos = source_node.get("metadata", {}).get("position", {})
-                sink_pos = sink_node.get("metadata", {}).get("position", {})
-                
-                if "x" in source_pos and "y" in source_pos and "x" in sink_pos and "y" in sink_pos:
-                    dx = source_pos["x"] - sink_pos["x"]
-                    dy = source_pos["y"] - sink_pos["y"]
-                    distance = (dx**2 + dy**2)**0.5
-                    if distance > 0:  # Avoid zero distances
-                        distances.append(distance)
-        
-        # If no valid distances found, use bounding box approach
-        if not distances:
-            # Calculate bounding box of all nodes
-            x_coords = []
-            y_coords = []
-            for node in nodes:
-                position = node.get("metadata", {}).get("position", {})
-                if "x" in position and "y" in position:
-                    x_coords.append(position["x"])
-                    y_coords.append(position["y"])
-            
-            if x_coords and y_coords:
-                current_spread = max(max(x_coords) - min(x_coords), max(y_coords) - min(y_coords))
-                # Assume we want nodes spread over ~3 average distances
-                if current_spread > 0:
-                    avg_distance = current_spread / max(1, len(nodes) - 1)
-                    if avg_distance > 0:
-                        distances.append(avg_distance)
-        
-        if not distances:
-            # No positions to scale, mark as normalized
-            if "graph_metadata" not in agent:
-                agent["graph_metadata"] = {}
-            agent["graph_metadata"]["positions_normalized"] = True
-            return agent
-        
-        # Calculate scaling factor to achieve target distance
-        current_avg_distance = sum(distances) / len(distances)
-        scale_factor = target_distance / current_avg_distance if current_avg_distance > 0 else 1.0
-        
-        # Only scale if the difference is significant (avoid scaling if already close to target)
-        if abs(scale_factor - 1.0) < 0.1:
-            scale_factor = 1.0
-        
-        scaled_count = 0
         for node in nodes:
-            metadata = node.get("metadata", {})
-            position = metadata.get("position", {})
+            block_id = node.get("block_id")
+            block = block_map.get(block_id)
             
-            if "x" in position and "y" in position:
-                old_x = position["x"]
-                old_y = position["y"]
+            if not block:
+                continue
+            
+            # Check if the block has category "AI" in its categories array
+            categories = block.get("categories", [])
+            is_ai_block = any(
+                cat.get("category") == "AI" 
+                for cat in categories 
+                if isinstance(cat, dict)
+            )
+            
+            if is_ai_block:
+                node_id = node.get("id")
+                input_default = node.get("input_default", {})
                 
-                position["x"] = old_x * scale_factor
-                position["y"] = old_y * scale_factor
-                
-                scaled_count += 1
-                if scaled_count <= 5:  # Only log first 5 to avoid spam
+                # Check if model parameter is missing
+                if "model" not in input_default:
+                    input_default["model"] = default_model
+                    node["input_default"] = input_default
+                    
+                    block_name = block.get("name", "Unknown AI Block")
                     self.add_fix_log(
-                        f"Scaled node {node.get('id')} position: ({old_x:.1f}, {old_y:.1f}) -> ({position['x']:.1f}, {position['y']:.1f})"
+                        f"Added model parameter '{default_model}' to AI block node {node_id} ({block_name})"
                     )
+                    fixed_count += 1
         
-        # Mark positions as normalized
-        if "graph_metadata" not in agent:
-            agent["graph_metadata"] = {}
-        agent["graph_metadata"]["positions_normalized"] = True
-        
-        if scaled_count > 0:
-            logging.info(f"Normalized positions for {scaled_count} nodes (avg distance: {current_avg_distance:.1f} -> {target_distance:.1f}, scale: {scale_factor:.2f}x)")
-            self.add_fix_log(f"Normalized node positions: avg distance {current_avg_distance:.1f} -> {target_distance:.1f} (scale: {scale_factor:.2f}x)")
+        if fixed_count > 0:
+            logging.info(f"Added model parameter to {fixed_count} AI block nodes")
         
         return agent
     
@@ -755,12 +700,11 @@ class AgentFixer:
         agent = await self.fix_addtodictionary_blocks(agent)
         agent = await self.fix_code_execution_output(agent)
         agent = await self.fix_data_sampling_sample_size(agent)
-        agent = await self.fix_node_positions_scale(agent)
         
-        # Apply link static properties fix if blocks are provided
+        # Apply fixes that require blocks information
         if blocks:
+            agent = await self.fix_ai_model_parameter(agent, blocks)
             agent = await self.fix_link_static_properties(agent, blocks)
-            # Apply data type mismatch fix if blocks are provided
             agent = await self.fix_data_type_mismatch(agent, blocks)
         
         logging.info(f"Applied {len(self.fixes_applied)} fixes to agent")
