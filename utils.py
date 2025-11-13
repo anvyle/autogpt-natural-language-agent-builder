@@ -623,21 +623,89 @@ class AgentFixer:
         
         return agent
     
-    async def fix_node_positions_scale(self, agent: Dict[str, Any], scale_factor: float = 1.5) -> Dict[str, Any]:
+    async def fix_node_positions_scale(self, agent: Dict[str, Any], target_distance: float = 1000.0) -> Dict[str, Any]:
         """
-        Scale node positions by a given factor (default 2x).
-        This increases the spacing between nodes in the visual graph editor.
+        Normalize node positions to maintain a consistent distance between connected nodes.
+        This ensures spacing remains constant even if the function is called multiple times.
         
         Args:
             agent: The agent dictionary to fix
-            scale_factor: The factor to scale positions by (default 2.0 for doubling)
+            target_distance: The target distance between connected nodes (default 700)
             
         Returns:
             The fixed agent dictionary
         """
-        nodes = agent.get("nodes", [])
-        scaled_count = 0
+        # Check if positions have already been normalized
+        graph_metadata = agent.get("graph_metadata", {})
+        if graph_metadata.get("positions_normalized", False):
+            logging.info("Node positions already normalized, skipping scaling")
+            return agent
         
+        nodes = agent.get("nodes", [])
+        links = agent.get("links", [])
+        
+        if len(nodes) < 2:
+            # Mark as normalized even if no scaling needed
+            if "graph_metadata" not in agent:
+                agent["graph_metadata"] = {}
+            agent["graph_metadata"]["positions_normalized"] = True
+            return agent
+        
+        # Calculate current average distance between connected nodes
+        distances = []
+        for link in links:
+            source_id = link.get("source_id")
+            sink_id = link.get("sink_id")
+            
+            source_node = next((n for n in nodes if n.get("id") == source_id), None)
+            sink_node = next((n for n in nodes if n.get("id") == sink_id), None)
+            
+            if source_node and sink_node:
+                source_pos = source_node.get("metadata", {}).get("position", {})
+                sink_pos = sink_node.get("metadata", {}).get("position", {})
+                
+                if "x" in source_pos and "y" in source_pos and "x" in sink_pos and "y" in sink_pos:
+                    dx = source_pos["x"] - sink_pos["x"]
+                    dy = source_pos["y"] - sink_pos["y"]
+                    distance = (dx**2 + dy**2)**0.5
+                    if distance > 0:  # Avoid zero distances
+                        distances.append(distance)
+        
+        # If no valid distances found, use bounding box approach
+        if not distances:
+            # Calculate bounding box of all nodes
+            x_coords = []
+            y_coords = []
+            for node in nodes:
+                position = node.get("metadata", {}).get("position", {})
+                if "x" in position and "y" in position:
+                    x_coords.append(position["x"])
+                    y_coords.append(position["y"])
+            
+            if x_coords and y_coords:
+                current_spread = max(max(x_coords) - min(x_coords), max(y_coords) - min(y_coords))
+                # Assume we want nodes spread over ~3 average distances
+                if current_spread > 0:
+                    avg_distance = current_spread / max(1, len(nodes) - 1)
+                    if avg_distance > 0:
+                        distances.append(avg_distance)
+        
+        if not distances:
+            # No positions to scale, mark as normalized
+            if "graph_metadata" not in agent:
+                agent["graph_metadata"] = {}
+            agent["graph_metadata"]["positions_normalized"] = True
+            return agent
+        
+        # Calculate scaling factor to achieve target distance
+        current_avg_distance = sum(distances) / len(distances)
+        scale_factor = target_distance / current_avg_distance if current_avg_distance > 0 else 1.0
+        
+        # Only scale if the difference is significant (avoid scaling if already close to target)
+        if abs(scale_factor - 1.0) < 0.1:
+            scale_factor = 1.0
+        
+        scaled_count = 0
         for node in nodes:
             metadata = node.get("metadata", {})
             position = metadata.get("position", {})
@@ -650,12 +718,19 @@ class AgentFixer:
                 position["y"] = old_y * scale_factor
                 
                 scaled_count += 1
-                self.add_fix_log(
-                    f"Scaled node {node.get('id')} position: ({old_x}, {old_y}) -> ({position['x']}, {position['y']})"
-                )
+                if scaled_count <= 5:  # Only log first 5 to avoid spam
+                    self.add_fix_log(
+                        f"Scaled node {node.get('id')} position: ({old_x:.1f}, {old_y:.1f}) -> ({position['x']:.1f}, {position['y']:.1f})"
+                    )
+        
+        # Mark positions as normalized
+        if "graph_metadata" not in agent:
+            agent["graph_metadata"] = {}
+        agent["graph_metadata"]["positions_normalized"] = True
         
         if scaled_count > 0:
-            logging.info(f"Scaled positions for {scaled_count} nodes by factor {scale_factor}")
+            logging.info(f"Normalized positions for {scaled_count} nodes (avg distance: {current_avg_distance:.1f} -> {target_distance:.1f}, scale: {scale_factor:.2f}x)")
+            self.add_fix_log(f"Normalized node positions: avg distance {current_avg_distance:.1f} -> {target_distance:.1f} (scale: {scale_factor:.2f}x)")
         
         return agent
     
