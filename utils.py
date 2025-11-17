@@ -328,6 +328,13 @@ class AgentFixer:
                 # Track this as an original AddToList node
                 original_addtolist_node_ids.add(node.get("id"))
                 original_node_id = node.get("id")
+                original_node_position = node.get("metadata", {}).get("position", {})
+                if original_node_position:
+                    original_node_position_x = original_node_position.get("x", 0)
+                    original_node_position_y = original_node_position.get("y", 0)
+                else:
+                    original_node_position_x = 0
+                    original_node_position_y = 0
                 
                 # Check how many links are connected to the 'list' property of this AddToList block
                 list_links_count = sum(
@@ -380,8 +387,8 @@ class AgentFixer:
                         },
                         "metadata": {
                             "position": {
-                                "x": prerequisite_counter * 200,  # Space nodes horizontally
-                                "y": -100  # Position above the original node
+                                "x": original_node_position_x - 800,  # Space nodes horizontally
+                                "y": original_node_position_y + 800  # Position above the original node
                             }
                         },
                         "graph_id": agent.get("id"),
