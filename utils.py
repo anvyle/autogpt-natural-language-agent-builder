@@ -898,6 +898,39 @@ class AgentValidator:
         """Add an error message to the validation errors list."""
         self.errors.append(error_message)
     
+    def validate_block_existence(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> bool:
+        """
+        Validate that all block IDs used in the agent actually exist in the blocks list.
+        Returns True if all block IDs exist, False otherwise.
+        """
+        valid = True
+        
+        # Create a set of all valid block IDs for fast lookup
+        valid_block_ids = {block.get("id") for block in blocks if block.get("id")}
+        
+        # Check each node's block_id
+        for node in agent.get("nodes", []):
+            block_id = node.get("block_id")
+            node_id = node.get("id")
+            
+            if not block_id:
+                self.add_error(
+                    f"Node '{node_id}' is missing a 'block_id' field. "
+                    f"Every node must reference a valid block."
+                )
+                valid = False
+                continue
+            
+            if block_id not in valid_block_ids:
+                self.add_error(
+                    f"Node '{node_id}' references block_id '{block_id}' which does not exist in the available blocks. "
+                    f"This block may have been deprecated, removed, or the ID is incorrect. "
+                    f"Please use a valid block from the blocks library."
+                )
+                valid = False
+        
+        return valid
+    
     def validate_required_inputs(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> bool:
         """
         Validate that all required inputs are provided for each node.
@@ -1057,6 +1090,7 @@ class AgentValidator:
         self.errors = []
         
         checks = [
+            ("Block existence", self.validate_block_existence(agent, blocks)),
             ("Required inputs", self.validate_required_inputs(agent, blocks)),
             ("Data type compatibility", self.validate_data_type_compatibility(agent, blocks)),
             ("Nested sink links", self.validate_nested_sink_links(agent, blocks))
