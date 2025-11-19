@@ -1390,14 +1390,13 @@ async def decompose_description(description, block_summaries, original_text=None
         logging.error(f"❌ Error decomposing description: {e}")
         return None
     
-async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retries=1):
+async def generate_agent_json_from_subtasks(instructions, blocks_json):
     """
-    Generate agent JSON from instructions with retry logic.
+    Generate agent JSON from instructions (single attempt, no retry logic).
     
     Args:
         instructions: Step-by-step instructions (dict or string)
         blocks_json: Available blocks data
-        max_retries: Maximum number of retry attempts (default: 1)
     
     Returns:
         Tuple of (agent_json, error_message)
@@ -1433,85 +1432,56 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retri
 
     example = await load_json_async(EXAMPLE_FILE)
     example = json.dumps(example, indent=2)
-
-    current_instructions = instructions
-    validation_error = None
     
-    for attempt in range(max_retries + 1):
-        logging.info(f"Agent generation attempt {attempt + 1}/{max_retries + 1}")
-        
-        try:
-            llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-            prompt = get_agent_generation_prompt(used_blocks, example)
+    try:
+        llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
+        prompt = get_agent_generation_prompt(used_blocks, example)
 
-            # Ensure 'instructions' is a string before sending as LLM message content
-            if isinstance(current_instructions, dict):
-                instructions_content = json.dumps(current_instructions, indent=2)
-            else:
-                instructions_content = str(current_instructions)
+        # Ensure 'instructions' is a string before sending as LLM message content
+        if isinstance(instructions, dict):
+            instructions_content = json.dumps(instructions, indent=2)
+        else:
+            instructions_content = str(instructions)
 
-            # Add validation error feedback for retry attempts
-            if attempt > 0 and validation_error:
-                instructions_content = f"""PREVIOUS VALIDATION ERROR:
-{validation_error}
+        messages = [
+            SystemMessage(content=prompt),
+            HumanMessage(content=instructions_content)
+        ]
 
-Please fix the above validation error and generate a corrected agent JSON.
-
-ORIGINAL INSTRUCTIONS:
-{instructions_content}"""
-
-            messages = [
-                SystemMessage(content=prompt),
-                HumanMessage(content=instructions_content)
-            ]
-
-            response = await llm.ainvoke(messages)
-            if response is None:
-                logging.error("❌ No response received from LLM")
-                if attempt < max_retries:
-                    continue
-                return None, "No response received from LLM"
-                
-            agent_json = _parse_llm_json_or_none(str(response.content))
-            if agent_json is None:
-                logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
-                if attempt < max_retries:
-                    continue
-                return None, "Failed to parse JSON from LLM response"
-
-            agent_fixer = AgentFixer()
-            agent_json = await agent_fixer.apply_all_fixes(agent_json, blocks_json)
-
-            validator = AgentValidator()
-            is_valid, error = validator.validate(agent_json, blocks_json)
-            if not is_valid:
-                if attempt < max_retries:
-                    logging.warning(f"⚠️ Agent validation failed (attempt {attempt + 1}/{max_retries + 1}): {error}")
-                    logging.info("🔄 Retrying agent generation with validation error feedback...")
-                    validation_error = error  # Store error for next attempt
-                    continue
-                else:
-                    return None, error
-
-            # Success - agent generated and validated
-            filename = agent_json["name"].replace(" ", "_")
-            agent_json_path = OUTPUT_DIR / f"{filename}.json"
-            try:
-                with open(agent_json_path, "w", encoding="utf-8") as f:
-                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                logging.info(f"✅ Saved agent.json to: {agent_json_path}")
-            except Exception as e:
-                logging.error(f"❌ Failed to save agent.json: {e}")
-                
-            return agent_json, None
+        response = await llm.ainvoke(messages)
+        if response is None:
+            logging.error("❌ No response received from LLM")
+            return None, "No response received from LLM"
             
+        agent_json = _parse_llm_json_or_none(str(response.content))
+        if agent_json is None:
+            logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
+            return None, "Failed to parse JSON from LLM response"
+
+        agent_fixer = AgentFixer()
+        agent_json = await agent_fixer.apply_all_fixes(agent_json, blocks_json)
+
+        validator = AgentValidator()
+        is_valid, error = validator.validate(agent_json, blocks_json)
+        if not is_valid:
+            logging.warning(f"⚠️ Agent validation failed: {error}")
+            return None, error
+
+        # Success - agent generated and validated
+        filename = agent_json["name"].replace(" ", "_")
+        agent_json_path = OUTPUT_DIR / f"{filename}.json"
+        try:
+            with open(agent_json_path, "w", encoding="utf-8") as f:
+                json.dump(agent_json, f, indent=2, ensure_ascii=False)
+            logging.info(f"✅ Saved agent.json to: {agent_json_path}")
         except Exception as e:
-            logging.error(f"❌ Error during agent generation (attempt {attempt + 1}/{max_retries + 1}): {e}")
-            if attempt < max_retries:
-                continue
-            return None, f"Error during agent generation: {e}"
-    
-    return None, "Failed to generate agent after maximum retries"
+            logging.error(f"❌ Failed to save agent.json: {e}")
+            
+        return agent_json, None
+        
+    except Exception as e:
+        logging.error(f"❌ Error during agent generation: {e}")
+        return None, f"Error during agent generation: {e}"
 
 async def update_decomposition_incrementally(improvement_request, current_instructions, block_summaries, original_updated_instructions=None, validation_error=None):
     """
@@ -1591,9 +1561,9 @@ async def update_decomposition_incrementally(improvement_request, current_instru
         logging.error(f"❌ Error updating decomposition: {e}")
         return None
 
-async def update_agent_json_incrementally(updated_instructions, current_agent_json, blocks_json, max_retries=1):
+async def update_agent_json_incrementally(updated_instructions, current_agent_json, blocks_json):
     """
-    Update agent JSON incrementally based on updated instructions with retry logic.
+    Update agent JSON incrementally based on updated instructions (single attempt, no retry logic).
     This preserves the original agent structure and only modifies parts that need changes.
     Uses ALL the same rules as the original generate_agent_json_from_subtasks function.
     
@@ -1601,7 +1571,6 @@ async def update_agent_json_incrementally(updated_instructions, current_agent_js
         updated_instructions: Updated step-by-step instructions (dict or string)
         current_agent_json: Current agent JSON to update
         blocks_json: Available blocks data
-        max_retries: Maximum number of retry attempts (default: 1)
     
     Returns:
         Tuple of (updated_agent_json, error_message)
@@ -1628,79 +1597,46 @@ async def update_agent_json_incrementally(updated_instructions, current_agent_js
 
     example = await load_json_async(EXAMPLE_FILE)
     example = json.dumps(example, indent=2)
-
-    current_instructions = updated_instructions
-    validation_error = None
     
-    for attempt in range(max_retries + 1):
-        logging.info(f"Agent update attempt {attempt + 1}/{max_retries + 1}")
+    try:
+        llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
+        system_prompt = get_incremental_agent_update_system_prompt(used_blocks, example)
         
-        try:
-            llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-            system_prompt = get_incremental_agent_update_system_prompt(used_blocks, example)
-            
-            # Convert updated_instructions to string format for the prompt if it's JSON
-            if isinstance(current_instructions, dict):
-                instructions_for_prompt = json.dumps(current_instructions, indent=2)
-            else:
-                instructions_for_prompt = str(current_instructions)
-            
-            # Add validation error feedback for retry attempts
-            if attempt > 0 and validation_error:
-                instructions_for_prompt = f"""PREVIOUS VALIDATION ERROR:
-{validation_error}
-
-Please fix the above validation error and generate a corrected agent JSON.
-
-ORIGINAL INSTRUCTIONS:
-{instructions_for_prompt}"""
-            
-            human_prompt = get_incremental_agent_update_human_prompt(current_agent_json, instructions_for_prompt)
-            
-            response = await llm.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=human_prompt)
-            ])
-            if response is None:
-                logging.error("❌ No response received from LLM")
-                if attempt < max_retries:
-                    continue
-                return None, "No response received from LLM"
-            
-            updated_agent_json = _parse_llm_json_or_none(str(response.content))
-            if updated_agent_json is None:
-                logging.error("❌ Error updating agent JSON: Failed to parse JSON from LLM response")
-                if attempt < max_retries:
-                    continue
-                return None, "Failed to parse JSON from LLM response"
-            
-            agent_fixer = AgentFixer()
-            updated_agent_json = await agent_fixer.apply_all_fixes(updated_agent_json, blocks_json)
-            
-            validator = AgentValidator()
-            is_valid, error = validator.validate(updated_agent_json, blocks_json)
-            if not is_valid:
-                if attempt < max_retries:
-                    logging.warning(f"⚠️ Updated agent validation failed (attempt {attempt + 1}/{max_retries + 1}): {error}")
-                    logging.info("🔄 Retrying agent generation with validation error feedback...")
-                    validation_error = error  # Store error for next attempt
-                    continue
-                else:
-                    return None, error
-
-            # valid, message = validate_agent_json(updated_agent_json)
-            # if not valid:
-            #     return None, message
-            
-            return updated_agent_json, None
-            
-        except Exception as e:
-            logging.error(f"❌ Error during agent update (attempt {attempt + 1}/{max_retries + 1}): {e}")
-            if attempt < max_retries:
-                continue
-            return None, f"Error updating agent JSON: {e}"
-    
-    return None, "Failed to update agent after maximum retries"
+        # Convert updated_instructions to string format for the prompt if it's JSON
+        if isinstance(updated_instructions, dict):
+            instructions_for_prompt = json.dumps(updated_instructions, indent=2)
+        else:
+            instructions_for_prompt = str(updated_instructions)
+        
+        human_prompt = get_incremental_agent_update_human_prompt(current_agent_json, instructions_for_prompt)
+        
+        response = await llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=human_prompt)
+        ])
+        if response is None:
+            logging.error("❌ No response received from LLM")
+            return None, "No response received from LLM"
+        
+        updated_agent_json = _parse_llm_json_or_none(str(response.content))
+        if updated_agent_json is None:
+            logging.error("❌ Error updating agent JSON: Failed to parse JSON from LLM response")
+            return None, "Failed to parse JSON from LLM response"
+        
+        agent_fixer = AgentFixer()
+        updated_agent_json = await agent_fixer.apply_all_fixes(updated_agent_json, blocks_json)
+        
+        validator = AgentValidator()
+        is_valid, error = validator.validate(updated_agent_json, blocks_json)
+        if not is_valid:
+            logging.warning(f"⚠️ Updated agent validation failed: {error}")
+            return None, error
+        
+        return updated_agent_json, None
+        
+    except Exception as e:
+        logging.error(f"❌ Error during agent update: {e}")
+        return None, f"Error updating agent JSON: {e}"
 
 
 async def generate_template_modification_instructions(template_agent_json, modification_request, block_summaries, current_instructions=None):
