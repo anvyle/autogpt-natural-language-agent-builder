@@ -1301,86 +1301,190 @@ def proceed_to_generation():
     st.rerun()
 
 def generate_agent():
-    """Generate the final agent."""
+    """Generate the final agent with instruction-level retry on validation errors."""
     current_instructions = st.session_state.final_instructions_json or st.session_state.final_instructions
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Generating your agent..."):
-        try:
-            agent_json, error = asyncio.run(
-                generate_agent_json_from_subtasks(
-                    current_instructions,
-                    blocks,
-                    max_retries=1
+    max_instruction_retries = 1  # Number of times to retry by updating instructions
+    
+    for retry_count in range(max_instruction_retries + 1):
+        with st.spinner(f"Generating your agent{f' (retry {retry_count})' if retry_count > 0 else ''}..."):
+            try:
+                agent_json, error = asyncio.run(
+                    generate_agent_json_from_subtasks(
+                        current_instructions,
+                        blocks
+                    )
                 )
-            )
-            
-            if error:
-                st.session_state.error_message = f"Error generating agent: {error}"
+                
+                if error:
+                    # Validation error occurred
+                    if retry_count < max_instruction_retries:
+                        # Try to update instructions based on validation error
+                        st.warning(f"⚠️ Validation error detected. Updating instructions and retrying...")
+                        
+                        with st.spinner("Updating instructions based on validation error..."):
+                            try:
+                                # Update instructions based on validation error
+                                updated_instructions = asyncio.run(
+                                    decompose_description(
+                                        st.session_state.goal,
+                                        block_summaries,
+                                        original_text=current_instructions,
+                                        retry_feedback=error
+                                    )
+                                )
+                                
+                                if not updated_instructions:
+                                    st.session_state.error_message = f"Error generating agent: {error}\n\nFailed to update instructions for retry."
+                                    st.session_state.agent_json = None
+                                    break
+                                
+                                # Check if the updated instructions are valid (not questions or suggestions)
+                                if isinstance(updated_instructions, dict):
+                                    if updated_instructions.get("type") in ["clarifying_questions", "unachievable_goal", "vague_goal"]:
+                                        st.session_state.error_message = f"Error generating agent: {error}\n\nCould not fix validation error automatically."
+                                        st.session_state.agent_json = None
+                                        break
+                                    elif updated_instructions.get("type") == "instructions":
+                                        current_instructions = updated_instructions
+                                        continue  # Retry with updated instructions
+                                
+                                # If we got a string response, try to parse it
+                                current_instructions = updated_instructions
+                                continue  # Retry with updated instructions
+                                
+                            except Exception as update_error:
+                                st.session_state.error_message = f"Error generating agent: {error}\n\nError updating instructions: {str(update_error)}"
+                                st.session_state.agent_json = None
+                                break
+                    else:
+                        # Max retries reached
+                        st.session_state.error_message = f"Error generating agent after {max_instruction_retries + 1} attempts: {error}"
+                        st.session_state.agent_json = None
+                        break
+                else:
+                    # Success - agent generated
+                    st.session_state.agent_json = agent_json
+                    st.session_state.working_agent_json = agent_json
+                    
+                    # Save agent
+                    agent_name = agent_json.get("name", "agent")
+                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                    agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                    
+                    try:
+                        with open(agent_json_path, "w", encoding="utf-8") as f:
+                            json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+                    
+                    break  # Success, exit retry loop
+                
+            except Exception as e:
+                st.session_state.error_message = f"Error during generation: {str(e)}"
                 st.session_state.agent_json = None
-            else:
-                # Success - agent generated
-                st.session_state.agent_json = agent_json
-                st.session_state.working_agent_json = agent_json
-                
-                # Save agent
-                agent_name = agent_json.get("name", "agent")
-                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-                agent_json_path = OUTPUT_DIR / f"{filename}.json"
-                
-                try:
-                    with open(agent_json_path, "w", encoding="utf-8") as f:
-                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-        except Exception as e:
-            st.session_state.error_message = f"Error during generation: {str(e)}"
-            st.session_state.agent_json = None
+                break
     
     # Always go to agent_results step, even on failure
     st.session_state.current_step = "agent_results"
     st.rerun()
 
 def generate_updated_agent():
-    """Generate the updated agent based on the new instructions."""
+    """Generate the updated agent with instruction-level retry on validation errors."""
     current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Generating your updated agent..."):
-        try:
-            agent_json, error = asyncio.run(
-                update_agent_json_incrementally(
-                    current_instructions,
-                    st.session_state.working_agent_json,  # Use the working agent JSON
-                    blocks,
-                    max_retries=1
+    max_instruction_retries = 1  # Number of times to retry by updating instructions
+    
+    for retry_count in range(max_instruction_retries + 1):
+        with st.spinner(f"Generating your updated agent{f' (retry {retry_count})' if retry_count > 0 else ''}..."):
+            try:
+                agent_json, error = asyncio.run(
+                    update_agent_json_incrementally(
+                        current_instructions,
+                        st.session_state.working_agent_json,  # Use the working agent JSON
+                        blocks
+                    )
                 )
-            )
-            
-            if error:
-                st.session_state.error_message = f"Error generating updated agent: {error}"
+                
+                if error:
+                    # Validation error occurred
+                    if retry_count < max_instruction_retries:
+                        # Try to update instructions based on validation error
+                        st.warning(f"⚠️ Validation error detected. Updating instructions and retrying...")
+                        
+                        with st.spinner("Updating instructions based on validation error..."):
+                            try:
+                                # Get the original instructions that were used for the improvement
+                                original_instructions = (
+                                    st.session_state.updated_instructions_json or 
+                                    st.session_state.final_instructions_json or 
+                                    st.session_state.current_decomposition_json
+                                )
+                                
+                                # Update instructions based on validation error
+                                updated_instructions = asyncio.run(
+                                    update_decomposition_incrementally(
+                                        st.session_state.improvement_request or "Fix validation errors",
+                                        original_instructions,
+                                        block_summaries,
+                                        original_updated_instructions=current_instructions,
+                                        validation_error=error
+                                    )
+                                )
+                                
+                                if not updated_instructions:
+                                    st.session_state.error_message = f"Error generating updated agent: {error}\n\nFailed to update instructions for retry."
+                                    st.session_state.agent_json = None
+                                    break
+                                
+                                # Check if the updated instructions are valid (not questions or suggestions)
+                                if isinstance(updated_instructions, dict):
+                                    if updated_instructions.get("type") in ["clarifying_questions", "unachievable_goal", "vague_goal"]:
+                                        st.session_state.error_message = f"Error generating updated agent: {error}\n\nCould not fix validation error automatically."
+                                        st.session_state.agent_json = None
+                                        break
+                                    elif updated_instructions.get("type") == "instructions":
+                                        current_instructions = updated_instructions
+                                        continue  # Retry with updated instructions
+                                
+                                # If we got a string response, try to parse it
+                                current_instructions = updated_instructions
+                                continue  # Retry with updated instructions
+                                
+                            except Exception as update_error:
+                                st.session_state.error_message = f"Error generating updated agent: {error}\n\nError updating instructions: {str(update_error)}"
+                                st.session_state.agent_json = None
+                                break
+                    else:
+                        # Max retries reached
+                        st.session_state.error_message = f"Error generating updated agent after {max_instruction_retries + 1} attempts: {error}"
+                        st.session_state.agent_json = None
+                        break
+                else:
+                    # Success - updated agent generated
+                    st.session_state.agent_json = agent_json
+                    st.session_state.working_agent_json = agent_json  # Update working agent JSON for next improvement iteration
+                    st.session_state.generation_counter += 1  # Increment generation counter
+                    
+                    # Save agent
+                    agent_name = agent_json.get("name", "agent")
+                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                    agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                    
+                    try:
+                        with open(agent_json_path, "w", encoding="utf-8") as f:
+                            json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+                    
+                    break  # Success, exit retry loop
+                
+            except Exception as e:
+                st.session_state.error_message = f"Error during updated generation: {str(e)}"
                 st.session_state.agent_json = None
-            else:
-                # Success - updated agent generated
-                st.session_state.agent_json = agent_json
-                st.session_state.working_agent_json = agent_json  # Update working agent JSON for next improvement iteration
-                st.session_state.generation_counter += 1  # Increment generation counter
-                
-                # Save agent
-                agent_name = agent_json.get("name", "agent")
-                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-                agent_json_path = OUTPUT_DIR / f"{filename}.json"
-                
-                try:
-                    with open(agent_json_path, "w", encoding="utf-8") as f:
-                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-        except Exception as e:
-            st.session_state.error_message = f"Error during updated generation: {str(e)}"
-            st.session_state.agent_json = None
+                break
     
     # Always go to agent_results step, even on failure
     st.session_state.current_step = "agent_results"
@@ -1656,44 +1760,92 @@ def process_enhanced_template_modification_request(enhanced_request: str):
             st.rerun()
 
 def generate_modified_agent_from_template():
-    """Generate the modified agent based on template and modification instructions."""
+    """Generate the modified agent with instruction-level retry on validation errors."""
     current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Generating your modified agent..."):
-        try:
-            agent_json, error = asyncio.run(
-                update_agent_json_incrementally(
-                    current_instructions,
-                    st.session_state.template_agent_json,  # Use template as base
-                    blocks,
-                    max_retries=1
+    max_instruction_retries = 1  # Number of times to retry by updating instructions
+    
+    for retry_count in range(max_instruction_retries + 1):
+        with st.spinner(f"Generating your modified agent{f' (retry {retry_count})' if retry_count > 0 else ''}..."):
+            try:
+                agent_json, error = asyncio.run(
+                    update_agent_json_incrementally(
+                        current_instructions,
+                        st.session_state.template_agent_json,  # Use template as base
+                        blocks
+                    )
                 )
-            )
-            
-            if error:
-                st.session_state.error_message = f"Error generating modified agent: {error}"
+                
+                if error:
+                    # Validation error occurred
+                    if retry_count < max_instruction_retries:
+                        # Try to update instructions based on validation error
+                        st.warning(f"⚠️ Validation error detected. Updating instructions and retrying...")
+                        
+                        with st.spinner("Updating instructions based on validation error..."):
+                            try:
+                                # Update instructions based on validation error
+                                updated_instructions = asyncio.run(
+                                    generate_template_modification_instructions(
+                                        st.session_state.template_agent_json,
+                                        st.session_state.template_modification_instructions or "Fix validation errors",
+                                        block_summaries,
+                                        current_instructions=current_instructions
+                                    )
+                                )
+                                
+                                if not updated_instructions:
+                                    st.session_state.error_message = f"Error generating modified agent: {error}\n\nFailed to update instructions for retry."
+                                    st.session_state.agent_json = None
+                                    break
+                                
+                                # Check if the updated instructions are valid (not questions or suggestions)
+                                if isinstance(updated_instructions, dict):
+                                    if updated_instructions.get("type") in ["clarifying_questions", "unachievable_goal", "vague_goal"]:
+                                        st.session_state.error_message = f"Error generating modified agent: {error}\n\nCould not fix validation error automatically."
+                                        st.session_state.agent_json = None
+                                        break
+                                    elif updated_instructions.get("type") == "instructions":
+                                        current_instructions = updated_instructions
+                                        continue  # Retry with updated instructions
+                                
+                                # If we got a string response, try to parse it
+                                current_instructions = updated_instructions
+                                continue  # Retry with updated instructions
+                                
+                            except Exception as update_error:
+                                st.session_state.error_message = f"Error generating modified agent: {error}\n\nError updating instructions: {str(update_error)}"
+                                st.session_state.agent_json = None
+                                break
+                    else:
+                        # Max retries reached
+                        st.session_state.error_message = f"Error generating modified agent after {max_instruction_retries + 1} attempts: {error}"
+                        st.session_state.agent_json = None
+                        break
+                else:
+                    # Success - modified agent generated
+                    st.session_state.agent_json = agent_json
+                    st.session_state.working_agent_json = agent_json
+                    st.session_state.generation_counter += 1
+                    
+                    # Save agent
+                    agent_name = agent_json.get("name", "agent")
+                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+                    agent_json_path = OUTPUT_DIR / f"{filename}.json"
+                    
+                    try:
+                        with open(agent_json_path, "w", encoding="utf-8") as f:
+                            json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+                    
+                    break  # Success, exit retry loop
+                
+            except Exception as e:
+                st.session_state.error_message = f"Error during generation: {str(e)}"
                 st.session_state.agent_json = None
-            else:
-                # Success - modified agent generated
-                st.session_state.agent_json = agent_json
-                st.session_state.working_agent_json = agent_json
-                st.session_state.generation_counter += 1
-                
-                # Save agent
-                agent_name = agent_json.get("name", "agent")
-                filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-                agent_json_path = OUTPUT_DIR / f"{filename}.json"
-                
-                try:
-                    with open(agent_json_path, "w", encoding="utf-8") as f:
-                        json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-            
-        except Exception as e:
-            st.session_state.error_message = f"Error during generation: {str(e)}"
-            st.session_state.agent_json = None
+                break
     
     # Always go to agent_results step, even on failure
     st.session_state.current_step = "agent_results"
