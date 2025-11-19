@@ -1321,13 +1321,20 @@ async def decompose_description(description, block_summaries, original_text=None
             ---
 
             Update the steps accordingly.
+            Output ONLY the updated instructions in JSON format, maintaining the same keys and structure.
+            Do NOT include any explanatory text, only the JSON instructions.
             """
         try:
             response = await llm.ainvoke([HumanMessage(content=prompt)])
             if response is None:
                 logging.error("❌ No response received from LLM")
                 return None
-            return str(response.content).strip()
+            
+            parsed = _parse_llm_json_or_none(str(response.content))
+            if parsed is None:
+                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
+                return None
+            return parsed
         except Exception as e:
             logging.error(f"❌ Error revising instructions: {e}")
             return None
@@ -1354,7 +1361,8 @@ async def decompose_description(description, block_summaries, original_text=None
             Revise the instructions to address the validation issue. 
             - Preserve the overall structure of the original instructions.
             - Add, remove, or modify steps only as needed to resolve the issue.
-            - Output the updated instructions in JSON format, maintaining the same keys and structure.
+            - Output ONLY the updated instructions in JSON format, maintaining the same keys and structure.
+            - Do NOT include any explanatory text, only the JSON instructions.
 
             You can refer to the following available blocks for implementation:
             {json.dumps(block_summaries, indent=2)}
@@ -1364,7 +1372,12 @@ async def decompose_description(description, block_summaries, original_text=None
             if response is None:
                 logging.error("❌ No response received from LLM")
                 return None
-            return str(response.content).strip()
+            
+            parsed = _parse_llm_json_or_none(str(response.content))
+            if parsed is None:
+                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
+                return None
+            return parsed
         except Exception as e:
             logging.error(f"❌ Error revising instructions: {e}")
             return None
@@ -1464,7 +1477,6 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json):
         validator = AgentValidator()
         is_valid, error = validator.validate(agent_json, blocks_json)
         if not is_valid:
-            logging.warning(f"⚠️ Agent validation failed: {error}")
             return None, error
 
         # Success - agent generated and validated
@@ -1524,7 +1536,8 @@ async def update_decomposition_incrementally(improvement_request, current_instru
         Revise the instructions to address the validation issue. 
         - Preserve the overall structure of the original instructions.
         - Add, remove, or modify steps only as needed to resolve the issue.
-        - Output the updated instructions in JSON format, maintaining the same keys and structure.
+        - Output ONLY the updated instructions in JSON format, maintaining the same keys and structure.
+        - Do NOT include any explanatory text, only the JSON instructions.
 
         You can refer to the following available blocks for implementation:
         {json.dumps(block_summaries, indent=2)}
@@ -1534,7 +1547,12 @@ async def update_decomposition_incrementally(improvement_request, current_instru
             if response is None:
                 logging.error("❌ No response received from LLM")
                 return None
-            return str(response.content).strip()
+            
+            parsed = _parse_llm_json_or_none(str(response.content))
+            if parsed is None:
+                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
+                return None
+            return parsed
         except Exception as e:
             logging.error(f"❌ Error revising instructions: {e}")
             return None
@@ -1629,7 +1647,6 @@ async def update_agent_json_incrementally(updated_instructions, current_agent_js
         validator = AgentValidator()
         is_valid, error = validator.validate(updated_agent_json, blocks_json)
         if not is_valid:
-            logging.warning(f"⚠️ Updated agent validation failed: {error}")
             return None, error
         
         return updated_agent_json, None
