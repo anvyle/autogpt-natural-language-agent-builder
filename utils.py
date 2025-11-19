@@ -1155,7 +1155,6 @@ class AgentValidator:
             for i, error in enumerate(self.errors, 1):
                 error_message += f"{i}. {error}\n"
             
-            error_message += "\nPlease fix these issues before the agent can be used."
             logging.error(f"❌ Agent validation failed: {error_message}")
             return False, error_message
 
