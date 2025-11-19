@@ -931,6 +931,54 @@ class AgentValidator:
         
         return valid
     
+    def validate_link_node_references(self, agent: Dict[str, Any]) -> bool:
+        """
+        Validate that all node IDs referenced in links actually exist in the agent's nodes.
+        Returns True if all link references are valid, False otherwise.
+        """
+        valid = True
+        
+        # Create a set of all valid node IDs for fast lookup
+        valid_node_ids = {node.get("id") for node in agent.get("nodes", []) if node.get("id")}
+        
+        # Check each link's source_id and sink_id
+        for link in agent.get("links", []):
+            link_id = link.get("id", "Unknown")
+            source_id = link.get("source_id")
+            sink_id = link.get("sink_id")
+            source_name = link.get("source_name", "")
+            sink_name = link.get("sink_name", "")
+            
+            # Check source_id
+            if not source_id:
+                self.add_error(
+                    f"Link '{link_id}' is missing a 'source_id' field. "
+                    f"Every link must reference a valid source node."
+                )
+                valid = False
+            elif source_id not in valid_node_ids:
+                self.add_error(
+                    f"Link '{link_id}' references source_id '{source_id}' which does not exist in the agent's nodes. "
+                    f"The link from '{source_name}' cannot be established because the source node is missing."
+                )
+                valid = False
+            
+            # Check sink_id
+            if not sink_id:
+                self.add_error(
+                    f"Link '{link_id}' is missing a 'sink_id' field. "
+                    f"Every link must reference a valid sink (destination) node."
+                )
+                valid = False
+            elif sink_id not in valid_node_ids:
+                self.add_error(
+                    f"Link '{link_id}' references sink_id '{sink_id}' which does not exist in the agent's nodes. "
+                    f"The link to '{sink_name}' cannot be established because the destination node is missing."
+                )
+                valid = False
+        
+        return valid
+    
     def validate_required_inputs(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> bool:
         """
         Validate that all required inputs are provided for each node.
@@ -1091,6 +1139,7 @@ class AgentValidator:
         
         checks = [
             ("Block existence", self.validate_block_existence(agent, blocks)),
+            ("Link node references", self.validate_link_node_references(agent)),
             ("Required inputs", self.validate_required_inputs(agent, blocks)),
             ("Data type compatibility", self.validate_data_type_compatibility(agent, blocks)),
             ("Nested sink links", self.validate_nested_sink_links(agent, blocks))
