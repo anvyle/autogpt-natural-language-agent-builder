@@ -372,6 +372,20 @@ class AgentFixer:
                 elif has_prerequisite_block:
                     self.add_fix_log(f"Skipped adding prerequisite AddToList block for {original_node_id} - already has prerequisite block exists")
                 else:
+                    # Before adding prerequisite block, remove all links to the "list" input (except self-referencing)
+                    links_to_list_input = []
+                    for link in links:
+                        if (link.get("sink_id") == original_node_id and 
+                            link.get("sink_name") == "list" and 
+                            link.get("source_id") != original_node_id):  # Not self-referencing
+                            links_to_list_input.append(link)
+                    
+                    # Remove these links from the links_to_remove list
+                    for link in links_to_list_input:
+                        if link not in links_to_remove:
+                            links_to_remove.append(link)
+                            self.add_fix_log(f"Removed link from {link.get('source_id')}:{link.get('source_name')} to AddToList block {original_node_id} 'list' input (will be replaced by prerequisite block)")
+                    
                     # Generate IDs for the new nodes
                     prerequisite_node_id = self.generate_uuid()
                     
