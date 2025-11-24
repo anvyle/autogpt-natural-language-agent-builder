@@ -16,7 +16,7 @@ import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 OUTPUT_DIR = Path(f"generated_agents/{datetime.now().strftime('%Y%m%d')}")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-MODEL = "gemini-2.5-pro-preview-03-25"
+MODEL = "gemini-3-pro-preview"
 
 BLOCK_FILE = "./data/blocks_2025_11_11_edited.json"
 EXAMPLE_FILE = "./data/Resume_Rater_AI.json"
@@ -1330,7 +1330,7 @@ async def decompose_description(description, block_summaries, original_text=None
                 logging.error("❌ No response received from LLM")
                 return None
             
-            parsed = _parse_llm_json_or_none(str(response.content))
+            parsed = _parse_llm_json_or_none(str(response.text))
             if parsed is None:
                 logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
                 return None
@@ -1373,7 +1373,7 @@ async def decompose_description(description, block_summaries, original_text=None
                 logging.error("❌ No response received from LLM")
                 return None
             
-            parsed = _parse_llm_json_or_none(str(response.content))
+            parsed = _parse_llm_json_or_none(str(response.text))
             if parsed is None:
                 logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
                 return None
@@ -1393,7 +1393,7 @@ async def decompose_description(description, block_summaries, original_text=None
             logging.error("❌ No response received from LLM")
             return None
         
-        parsed = _parse_llm_json_or_none(str(response.content))
+        parsed = _parse_llm_json_or_none(str(response.text))
         if parsed is None:
             logging.error("❌ Error decomposing description: Failed to parse JSON from LLM response")
             return None
@@ -1466,7 +1466,7 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json):
             logging.error("❌ No response received from LLM")
             return None, "No response received from LLM"
             
-        agent_json = _parse_llm_json_or_none(str(response.content))
+        agent_json = _parse_llm_json_or_none(str(response.text))
         if agent_json is None:
             logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
             return None, "Failed to parse JSON from LLM response"
@@ -1548,7 +1548,7 @@ async def update_decomposition_incrementally(improvement_request, current_instru
                 logging.error("❌ No response received from LLM")
                 return None
             
-            parsed = _parse_llm_json_or_none(str(response.content))
+            parsed = _parse_llm_json_or_none(str(response.text))
             if parsed is None:
                 logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
                 return None
@@ -1569,7 +1569,7 @@ async def update_decomposition_incrementally(improvement_request, current_instru
             logging.error("❌ No response received from LLM")
             return None
         
-        parsed = _parse_llm_json_or_none(str(response.content))
+        parsed = _parse_llm_json_or_none(str(response.text))
         if parsed is None:
             logging.error("❌ Error updating decomposition: Failed to parse JSON from LLM response")
             return None
@@ -1636,7 +1636,7 @@ async def update_agent_json_incrementally(updated_instructions, current_agent_js
             logging.error("❌ No response received from LLM")
             return None, "No response received from LLM"
         
-        updated_agent_json = _parse_llm_json_or_none(str(response.content))
+        updated_agent_json = _parse_llm_json_or_none(str(response.text))
         if updated_agent_json is None:
             logging.error("❌ Error updating agent JSON: Failed to parse JSON from LLM response")
             return None, "Failed to parse JSON from LLM response"
@@ -1732,7 +1732,7 @@ async def generate_template_modification_instructions(template_agent_json, modif
             logging.error("❌ No response received from LLM")
             return None
         
-        parsed = _parse_llm_json_or_none(str(response.content))
+        parsed = _parse_llm_json_or_none(str(response.text))
         if parsed is None:
             logging.error("❌ Error generating template modification instructions: Failed to parse JSON from LLM response")
             return None
