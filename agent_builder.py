@@ -377,7 +377,9 @@ Each node represents a block (input, logic, LLM, output, etc). Every node must i
 - `id`: A unique UUID v4 for the node (e.g. `a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b`)
 - `block_id`: The identifier of the block used (must match one of the Allowed Blocks)
 - `input_default`: A dict of inputs to this block (can be empty if no static inputs are needed)
-- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`. To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
+- `metadata`: Must contain:
+  - `"position": {{ "x": number, "y": number }}` - To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
+  - `"customized_name": "string"` - **REQUIRED**: A clear, human-readable name that describes the specific purpose of this block instance in the workflow (e.g., "Conceptualise Logo Designs", "Fetch Weather Data", "Send Daily Report Email"). This helps users understand the workflow at a glance. Make it specific to what this particular block does in this workflow, not just the generic block type name.
 - `graph_id` and `graph_version`: Inherit from the parent graph
 
 ---
@@ -849,7 +851,9 @@ Each node represents a block (input, logic, LLM, output, etc). Every node must i
 - `id`: A unique UUID v4 for the node (e.g. `a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b`)
 - `block_id`: The identifier of the block used (must match one of the Allowed Blocks)
 - `input_default`: A dict of inputs to this block (can be empty if no static inputs are needed)
-- `metadata`: Must contain at least `"position": {{ "x": number, "y": number }}`. To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
+- `metadata`: Must contain:
+  - `"position": {{ "x": number, "y": number }}` - To ensure readability, **adjacent nodes must have at least an 800 unit difference in their X positions** (i.e., each node's `"x"` should be at least 800 more or less than its neighbor).
+  - `"customized_name": "string"` - **REQUIRED**: A clear, human-readable name that describes the specific purpose of this block instance in the workflow (e.g., "Conceptualise Logo Designs", "Fetch Weather Data", "Send Daily Report Email"). This helps users understand the workflow at a glance. Make it specific to what this particular block does in this workflow, not just the generic block type name. **For existing nodes being preserved, maintain their original customized_name unless the change requires updating it.**
 - `graph_id` and `graph_version`: Inherit from the parent graph
 
 ---
