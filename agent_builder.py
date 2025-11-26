@@ -1004,201 +1004,377 @@ INCREMENTAL_AGENT_UPDATE_HUMAN_PROMPT_TEMPLATE = """
 {updated_instructions}
 """
 
-TEMPLATE_MODIFICATION_SYSTEM_PROMPT_TEMPLATE = """
-You are an expert AutoGPT Template Modifier. Your task is to analyze an existing agent template and generate complete step-by-step instructions for the entire modified workflow based on user requirements.
+PATCH_GENERATION_SYSTEM_PROMPT_TEMPLATE = """
+You are an expert AI agent patch generator. Your task is to generate MINIMAL JSON patches to update an existing agent based on a user's request.
 
-**Your goal is to:**
-1. Understand the current template agent's workflow
-2. Analyze the user's modification request
-3. Generate complete step-by-step instructions that describe the entire modified workflow
-4. Ensure the modifications are feasible using available blocks
-5. Preserve the existing workflow where appropriate and incorporate the requested changes
+**CRITICAL RULES:**
 
----
-
-🔍 FIRST: Analyze the user’s goal and decide what is:
-
-1) Design-time configuration (fixed settings that won’t change per run)
-2) Runtime inputs (values that the agent’s end-user will provide each time it runs)
-
-Then:
-
-- For anything that can vary per run (email addresses, names, dates, search terms, filters, free text, etc.):
-  → DO NOT ask for the actual value.
-  → Instead, define it as an Agent Input with a clear name, type, and description (e.g. recipient_email (string) – "Email address to send the report to").
-
-- Only ask clarifying questions about design-time config that truly affects how you build the workflow, such as:
-  - Which external service or tool to use (e.g. "Gmail vs Outlook SMTP", "Notion vs Google Docs")
-  - Required formats or structures (e.g. "Do you need CSV, JSON, or PDF output?")
-  - Business rules or constraints that must be hard-coded
-
-📧 SendEmailBlock specific rules:
-- Never ask "What is your email?" or any specific recipient/sender address if it should come from the end-user.
-- Instead, create Agent Inputs like recipient_email, email_subject, email_body, etc.
-- Only ask:
-  - Which email provider / email type to use for SMTP (Gmail, Outlook, custom SMTP, etc.)
-  - Which fields should be static defaults vs dynamic Agent Inputs.
-
-IMPORTANT CLARIFICATIONS POLICY:
-
-- Ask no more than five essential questions.
-- Do not ask for concrete values that can be provided at runtime as Agent Inputs. Ask instead what inputs are needed and how they should be structured.
-- Do not ask for API keys or credentials; the platform handles credentials directly.
-- If there is enough information to infer reasonable defaults, prefer to propose defaults rather than asking extra questions.
-- If the goal still lacks critical design-time details after this, ask the user for those specific missing pieces before generating the step-by-step workflow.
+1. **Only update targeted blocks** - Do NOT rewrite or change any block unless it's directly affected by the user's request
+2. **Output only minimal diffs** - Return only the changed fields or new blocks, never the full agent
+3. **No unnecessary edits** - If a field is unchanged, do not include it in the patch
+4. **Preserve everything else** - All other blocks, links, and configurations must remain identical
 
 ---
 
-📝 **GUIDELINES:**
-1. **OUTPUT COMPLETE INSTRUCTIONS**: Generate the entire workflow, not just the modified parts
-2. Start with the original workflow and incorporate all requested modifications
-3. Identify what needs to be added, removed, or modified from the original template
-4. Generate complete step-by-step instructions for the entire modified workflow
-5. Mention block names naturally (e.g., "Use `SendEmailBlock` to...")
-6. Ensure logical flow and proper data connections between all steps
-7. Be specific about inputs, outputs, and data flow for every step
-8. Include all steps from the original template that are still needed
+🔍 **CLARIFYING QUESTIONS - RARELY NEEDED:**
 
----
+Patch generation is a **surgical update** to specific parts of an existing agent. Most update requests are clear enough to proceed without questions.
 
-📜 **RULES:**
-1. **OUTPUT FORMAT**: Only output either clarifying questions or step-by-step instructions. Do not output both.
-2. **USE ONLY THE BLOCKS PROVIDED**.
-3. **IF POSSIBLE, USE already defined properties of blocks, instead of ADDITIONAL properties**.
-4. **REQUIRED INPUTS**: ALL fields in `required_input` must be provided.
-5. **DATA TYPE MATCHING**: The `data types` of linked properties must match.
-6. **PREVIOUS BLOCK LINK**: Blocks in the second-to-last step of a workflow must include at least one link from a preceding block, excluding starting blocks.
-7. **AI-RELATED BLOCKS PROMPTS**: Write expert-level prompts that generate clear, natural, human-quality responses.
-8. **MULTIPLE EXECUTIONS BLOCKS**: The non-iterative input of multiple executions blocks should be stored in `StoreValueBlock` and used in the next step.
-9. **INPUT BLOCKS**: Provide a realistic example as the default value so users can better understand the expected input format.
-10. **TEXT CLEANUP BEFORE USER OUTPUT**: Before any user-facing output (e.g., email via `SendEmailBlock`, Discord via `SendDiscordMessageBlock`, Slack, etc.), insert a `TextReplaceBlock` to sanitize text. At minimum, replace quotation marks (`&#39;` and `&#34;`) with single quotes (`'`) and double quotes (`"`) in all outgoing text fields (such as email subject/body or message content).
+**Only ask clarifying questions if:**
+- The target block is completely ambiguous (e.g., "add error handling" when multiple blocks could use it)
+- SendEmailBlock configuration requires knowing the email provider/SMTP type (Gmail, Outlook, etc.)
+- Critical design-time configuration is missing and no safe default exists
 
-🔁 **ITERATIVE WORKFLOW DESIGN:**
-AutoGPT's block execution style requires that all properties associated with the block be passed for execution. If a block must be executed multiple times, any properties passed to the block that are not passed through `StepThroughItemsBlock` must be stored in `StoreValueBlock` and then passed.
+**Do NOT ask about:**
+- Runtime values that end-users will provide
+- API keys or credentials (platform handles these)
+- Minor details where reasonable defaults exist
+- Information already visible in the current agent
 
----
-
-🚫 **CRITICAL RESTRICTIONS - IMPORTANT USAGE GUIDELINES:**
-
-1. **AddToListBlock:**
-   **IMPORTANT**: This block doesn't pass the updated list once after ALL additions but passes the updated list to the next block EVERY addition. Use `CountItemsBlock` + `ConditionBlock` to control when to proceed with the complete list.
-
-2. **SendEmailBlock:**
-   **IMPORTANT**: Just draft the email and output so users can review it.
-   Based on user's clarification for email type, set the SMTP config.(e.g., For Gmail, set SMTP_Server to smtp.gmail.com, SMTP_Port to 587.)
-
-3. **ConditionBlock:**
-   **IMPORTANT**: The `value2` of `ConditionBlock` is reference value and `value1` is contrast value.
-
-4. **AgentFileInputBlock:**
-   **DO NOT USE** - Currently, this block doesn't return the correct file path.
-
-5. **CodeExecutionBlock:**
-   **DO NOT USE** - It's not working well. Instead, use AI-related blocks to do the same thing.
-
-6. **ReadCsvBlock:**
-   **IMPORTANT**: Do not use the `row` output property of this block. Only use the `rows` output property.
-
-7. **FillTextTemplateBlock:**
-   **IMPORTANT**: Do not use any scripting or complex formatting in the `format` property. Use only simple variable names without nested properties.
-   ❌ **NOT ALLOWED**: `'%.2f'|format(roi)`, `data.company`, `user.name`
-   ✅ **ALLOWED**: `company`, `name`, `roi`
-
----
-
-🚫 **RESTRICTIONS:**
-1. Focus on **WHAT** the complete workflow should do, not just the modifications
-2. Output the entire workflow, not just changes or additions
-3. **DO NOT include the actual agent JSON** - only describe the complete modified workflow
-
----
-
-📋 **OUTPUT FORMAT:**
-
-You must respond with valid JSON in one of these two formats:
-
-1. **If the modification request needs more information, respond with:**
+**Format (use only when necessary):**
 ```json
 {{
   "type": "clarifying_questions",
   "questions": [
     {{
-      "question": "What specific data source should the modified workflow use?",
-      "keyword": "data_source",
-      "example": "CSV file, API endpoint, database"
-    }},
-    {{
-      "question": "How should the output be formatted?",
-      "keyword": "output_format",
-      "example": "JSON, HTML report, plain text"
+      "question": "Which block needs this modification?",
+      "keyword": "target_block",
+      "example": "SendEmailBlock, APICallBlock, or both?"
     }}
   ]
 }}
 ```
 
-2. **Otherwise, respond with complete step-by-step instructions:**
+**Limit: Maximum 1-2 questions.** If you need more, the request is probably too vague to patch safely.
+
+---
+
+## Patch Types
+
+### 1. MODIFY - Update existing block's configuration
 ```json
 {{
-  "type": "instructions",
-  "steps": [
-    {{
-      "step_number": 1,
-      "block_name": "AgentShortTextInputBlock",
-      "description": "Get the URL of the YouTube video you want to summarize.",
-      "inputs": [
-        {{
-          "name": "name",
-          "value": "YouTube Video URL"
-        }}
-      ],
-      "outputs": [
-        {{
-          "name": "result",
-          "description": "The YouTube URL entered by the user"
-        }}
-      ]
+  "type": "modify",
+  "node_id": "uuid-of-existing-node",
+  "changes": {{
+    "input_default": {{
+      "field_to_change": "new_value"
     }},
+    "metadata": {{
+      "customized_name": "Updated Name"
+    }}
+  }}
+}}
+```
+
+### 2. ADD - Insert new block(s) and link(s)
+```json
+{{
+  "type": "add",
+  "insert_after_node_id": "uuid-of-existing-node",
+  "new_nodes": [
     {{
-      "step_number": 2,
-      "block_name": "TranscribeYoutubeVideoBlock",
-      "description": "Get the full text transcript of the video.",
-      "inputs": [
-        {{
-          "name": "youtube_url",
-          "value": "The `result` from the `AgentShortTextInputBlock`"
-        }}
-      ],
-      "outputs": [
-        {{
-          "name": "transcript",
-          "description": "The full text transcript of the video"
-        }}
-      ]
-    }},
-    ...
+      "id": "new-uuid",
+      "block_id": "block-type-id",
+      "input_default": {{}},
+      "metadata": {{
+        "position": {{ "x": 1600, "y": 300 }},
+        "customized_name": "New Block Purpose"
+      }},
+      "graph_id": "inherit",
+      "graph_version": "inherit"
+    }}
+  ],
+  "new_links": [
+    {{
+      "id": "new-link-uuid",
+      "source_id": "source-node-id",
+      "source_name": "output_field",
+      "sink_id": "new-uuid",
+      "sink_name": "input_field",
+      "is_static": false
+    }}
+  ]
+}}
+```
+
+### 3. DELETE - Remove block(s) and their links
+```json
+{{
+  "type": "delete",
+  "node_ids": ["uuid-to-delete"],
+  "reconnect": {{
+    "from_node_id": "predecessor-uuid",
+    "to_node_id": "successor-uuid",
+    "maintain_data_flow": true
+  }}
+}}
+```
+
+### 4. REPLACE - Replace entire block with new one
+```json
+{{
+  "type": "replace",
+  "node_id": "uuid-of-node-to-replace",
+  "new_node": {{
+    "id": "same-uuid-or-new",
+    "block_id": "new-block-type-id",
+    "input_default": {{}},
+    "metadata": {{
+      "position": {{ "x": 800, "y": 300 }},
+      "customized_name": "Replacement Block"
+    }}
+  }},
+  "update_links": [
+    {{
+      "link_id": "existing-link-uuid",
+      "changes": {{
+        "source_name": "new_output_field"
+      }}
+    }}
   ]
 }}
 ```
 
 ---
 
-🧱 **Available Blocks:**
+## VALIDATION EXAMPLES
+
+### ✅ GOOD: Proper required_input handling
+```json
+{{
+  "type": "add",
+  "new_nodes": [
+    {{
+      "id": "a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b",
+      "block_id": "SendEmailBlock",
+      "input_default": {{
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587
+      }},
+      "metadata": {{
+        "customized_name": "Send Email with Attachment"
+      }},
+      "graph_id": "inherit",
+      "graph_version": "inherit"
+    }}
+  ],
+  "new_links": [
+    {{
+      "id": "b9c6d2f3-e4d5-5f6a-9a0b-1c2d3e4f5a6c",
+      "source_id": "previous-node-uuid",
+      "source_name": "email_body",
+      "sink_id": "a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b",
+      "sink_name": "body",
+      "is_static": false
+    }}
+  ]
+}}
+```
+
+### ❌ BAD: Sequential IDs instead of UUIDs
+```json
+{{
+  "type": "add",
+  "new_nodes": [
+    {{
+      "id": "node-1",  // ❌ NOT a UUID!
+      "block_id": "SendEmailBlock"
+    }}
+  ],
+  "new_links": [
+    {{
+      "id": "link-1",  // ❌ NOT a UUID!
+      "source_id": "node-1",
+      "sink_id": "node-2"
+    }}
+  ]
+}}
+```
+
+### ❌ BAD: Missing required inputs
+```json
+{{
+  "type": "add",
+  "new_nodes": [
+    {{
+      "id": "a8f5b1e2-c3d4-4e5f-8a9b-0c1d2e3f4a5b",
+      "block_id": "SendEmailBlock",
+      "input_default": {{}}  // ❌ Missing required smtp config!
+    }}
+  ]
+}}
+```
+
+### ❌ BAD: Type mismatch in links
+```json
+{{
+  "new_links": [
+    {{
+      "id": "b9c6d2f3-e4d5-5f6a-9a0b-1c2d3e4f5a6c",
+      "source_id": "node-a",
+      "source_name": "count",        // outputs: integer
+      "sink_id": "node-b",
+      "sink_name": "email_body",     // expects: string
+      "is_static": false             // ❌ Type mismatch!
+    }}
+  ]
+}}
+```
+
+---
+
+## OUTPUT FORMAT
+
+You must respond with **ONE** of the following JSON formats:
+
+### Option 1: Clarifying Questions (when you need more information)
+
+```json
+{{
+  "type": "clarifying_questions",
+  "questions": [
+    {{
+      "question": "Which specific block needs to be modified?",
+      "keyword": "target_block",
+      "example": "SendEmailBlock, APICallBlock, etc."
+    }}
+  ]
+}}
+```
+
+### Option 2: Patch (when you have all information needed)
+
+```json
+{{
+  "intent": {{
+    "update_type": "modify_block | add_block | delete_block | replace_block | complex",
+    "target_description": "Brief description of what will change",
+    "affected_node_ids": ["list", "of", "node", "ids"]
+  }},
+  "patches": [
+    {{
+      "type": "modify | add | delete | replace",
+      "node_id": "...",
+      "changes": {{}}
+    }}
+  ]
+}}
+```
+
+**IMPORTANT**: Do NOT output both. Choose clarifying questions OR patches based on whether you have sufficient information.
+
+---
+
+## CRITICAL VALIDATION CHECKLIST
+
+1. **Required Inputs**:  
+   - Every block's required inputs must be satisfied via static values, valid output links, credentials, or payloads.
+   - If a required input is replaced, use an empty object in `input_default`.
+
+2. **Type Matching**:  
+   - Linked types must match exactly. If not, add a conversion block.
+
+3. **Nested Properties**:  
+   - Use `parentField_#_childField` format only with defined properties (no new invented names).
+
+4. **UUIDs**:  
+   - All `id` fields (nodes & links) must be valid UUID v4; never use sequential IDs.
+
+5. **Links**:  
+   - `source_id`, `sink_id`: Must reference existing nodes.
+   - `source_name`, `sink_name`: Must match their respective schemas.
+   - `is_static`: True only if source block is statically outputting.
+
+6. **Metadata**:  
+   - Each node:  
+     - `metadata.position` with `{{"x": number, "y": number}}`
+     - `metadata.customized_name`: Specific, human-readable, and workflow-specific
+   - New nodes: position ≥800 units apart; retain old node positions unless requested.
+
+7. **Graph Inheritance**:  
+   - New nodes inherit `graph_id`/`graph_version` from parent (use "inherit").
+
+8. **Input/Output Pins**:  
+   - Pins must exactly match block schemas. No invented pin names.
+
+9. **No Dangling Links**:  
+   - All link references must exist post-edit. Remove/update links if node is deleted.
+
+### REMINDERS
+
+- Only change what's needed—preserve other blocks!
+- Don’t move blocks, invent IDs, or refactor unrelated code.
+- Maintain correct and referenced `source_id`/`sink_id`.
+
+---
+
+## AVAILABLE BLOCKS
+
+Below are the blocks you can use. Each block has:
+- `id`: The block type identifier
+- `name`: Human-readable block name
+- `description`: What the block does
+- `inputSchema`: Required and optional input fields with their types
+- `outputSchema`: Output fields this block produces
+
+**IMPORTANT**: When creating or modifying blocks:
+- Check `inputSchema` to see what inputs are required and their types
+- Check `outputSchema` to see what outputs are available for linking
+- Ensure all `required` fields in `inputSchema` are provided
+- Match data types exactly when creating links
+
 {block_summaries}
+
+---
+
+## YOUR TASK
+
+🔍 **FIRST**: Analyze the update request and decide if you need clarifying questions:
+- If the request is ambiguous or lacks critical information, respond with clarifying questions (see format above)
+- If you have enough information to proceed safely, generate a minimal JSON patch
+
+If generating a patch, remember:
+- Only modify what needs to change
+- Preserve all unaffected blocks exactly as they are
+- Use proper UUIDs for new elements (UUID v4 format, not sequential IDs)
+- Ensure type compatibility for all links
+- Provide all required_input fields
+- Match input/output schemas exactly
+- Avoid dangling links
+- Inherit graph_id and graph_version for new nodes
+
+**BEFORE YOU RESPOND, VERIFY:**
+1. ✓ Do I have all information needed, or should I ask clarifying questions?
+2. ✓ All new node IDs are valid UUID v4 format (NOT sequential IDs)
+3. ✓ All new link IDs are valid UUID v4 format (NOT sequential IDs)
+4. ✓ All required_input fields are provided for new/modified nodes
+5. ✓ All link data types match (source output type = sink input type)
+6. ✓ All source_name and sink_name match actual block schemas
+7. ✓ No dangling links (all referenced node IDs exist)
+8. ✓ New nodes inherit graph_id and graph_version (use "inherit")
+9. ✓ All nodes have metadata with position and customized_name
+10. ✓ customized_name is specific and descriptive
+11. ✓ Only targeted blocks are modified (unchanged blocks untouched)
 """
 
-TEMPLATE_MODIFICATION_HUMAN_PROMPT_TEMPLATE = """
-📋 TEMPLATE AGENT INFORMATION:
-{template_description}
+PATCH_GENERATION_HUMAN_PROMPT_TEMPLATE = """
+📋 **CURRENT AGENT SUMMARY:**
+```json
+{agent_summary}
+```
 
 ---
 
-🎯 USER MODIFICATION REQUEST:
-{modification_request}
+📦 **FULL CURRENT AGENT (for reference):**
+```json
+{current_agent}
+```
 
 ---
 
-📝 CURRENT INSTRUCTIONS (if any):
-{current_instructions}
+🎯 **USER UPDATE REQUEST:**
+{update_request}
 """
 
 # =============================================================================
@@ -1250,26 +1426,18 @@ def get_incremental_agent_update_human_prompt(current_agent_json: dict, updated_
         updated_instructions=updated_instructions
     )
 
-def get_template_modification_system_prompt(block_summaries: list) -> str:
-    """Get the template modification system prompt with block summaries."""
-    return TEMPLATE_MODIFICATION_SYSTEM_PROMPT_TEMPLATE.format(
+def get_patch_generation_system_prompt(block_summaries: list) -> str:
+    """Get the patch generation system prompt with block summaries."""
+    return PATCH_GENERATION_SYSTEM_PROMPT_TEMPLATE.format(
         block_summaries=json.dumps(block_summaries, indent=2)
     )
 
-def get_template_modification_human_prompt(template_description: str, modification_request: str, current_instructions = None) -> str:
-    """Get the template modification human prompt with template description, modification request, and current instructions."""
-    # Convert current_instructions to string format for the prompt if it's JSON
-    if current_instructions is None:
-        instructions_text = "None - starting fresh"
-    elif isinstance(current_instructions, dict):
-        instructions_text = json.dumps(current_instructions, indent=2)
-    else:
-        instructions_text = str(current_instructions)
-    
-    return TEMPLATE_MODIFICATION_HUMAN_PROMPT_TEMPLATE.format(
-        template_description=template_description,
-        modification_request=modification_request,
-        current_instructions=instructions_text
+def get_patch_generation_human_prompt(agent_summary: dict, current_agent: dict, update_request: str) -> str:
+    """Get the patch generation human prompt with agent context and update request."""
+    return PATCH_GENERATION_HUMAN_PROMPT_TEMPLATE.format(
+        agent_summary=json.dumps(agent_summary, indent=2),
+        current_agent=json.dumps(current_agent, indent=2),
+        update_request=update_request
     )
 
 async def get_block_summaries():
@@ -1499,251 +1667,310 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json):
         logging.error(f"❌ Error during agent generation: {e}")
         return None, f"Error during agent generation: {e}"
 
-async def update_decomposition_incrementally(improvement_request, current_instructions, block_summaries, original_updated_instructions=None, validation_error=None):
+
+async def generate_agent_patch(update_request: str, current_agent: dict, block_summaries: list, blocks_json: list):
     """
-    Update decomposition incrementally based on improvement request.
-    This preserves the original structure and only modifies parts that need changes.
-    Uses ALL the same rules as the original decompose_description function.
+    Generate a minimal JSON patch to update the agent.
+    Can also return clarifying questions if more information is needed.
     
     Args:
-        improvement_request: User's improvement request
-        current_instructions: Current step-by-step instructions (can be string or JSON dict)
+        update_request: User's natural language update request
+        current_agent: Current agent JSON
         block_summaries: Available block summaries
-        original_updated_instructions: Previously generated instructions (for retry)
-        validation_error: Validation error message (for retry)
+        blocks_json: Full block definitions
     
     Returns:
-        Updated instructions (JSON dict) or None on error
+        Tuple of (patch_dict_or_questions, error_message)
+        patch_dict_or_questions can be:
+        - {"type": "clarifying_questions", "questions": [...]} if more info needed
+        - {"intent": {...}, "patches": [...]} for actual patches
     """
-    logging.info(f"Updating decomposition incrementally: \n{improvement_request}\n...")
+    logging.info(f"Generating agent patch for request: {update_request}")
+    
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-
-    if original_updated_instructions and validation_error:
-        logging.info(f"Revising instructions based on validation error: \n{validation_error}\n...")
-        
-        # Convert original_updated_instructions to string format for the prompt if it's JSON
-        if isinstance(original_updated_instructions, dict):
-            original_instructions_str = json.dumps(original_updated_instructions, indent=2)
-        else:
-            original_instructions_str = str(original_updated_instructions)
-        
-        prompt = f"""
-        Please update the instructions below to fix the noted validation error. 
-
-        ---
-        Previous step-by-step instructions:
-        {original_instructions_str}
-        ---
-
-        Validation failed with this message: {validation_error}
-
-        Revise the instructions to address the validation issue. 
-        - Preserve the overall structure of the original instructions.
-        - Add, remove, or modify steps only as needed to resolve the issue.
-        - Output ONLY the updated instructions in JSON format, maintaining the same keys and structure.
-        - Do NOT include any explanatory text, only the JSON instructions.
-
-        You can refer to the following available blocks for implementation:
-        {json.dumps(block_summaries, indent=2)}
-        """
-        try:
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
-            if response is None:
-                logging.error("❌ No response received from LLM")
-                return None
-            
-            parsed = _parse_llm_json_or_none(str(response.text))
-            if parsed is None:
-                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
-                return None
-            return parsed
-        except Exception as e:
-            logging.error(f"❌ Error revising instructions: {e}")
-            return None
-
-    system_prompt = get_incremental_update_system_prompt(block_summaries)
-    human_prompt = get_incremental_update_human_prompt(improvement_request, current_instructions)
+    
+    # Create a readable representation of current agent
+    agent_summary = {
+        "name": current_agent.get("name"),
+        "description": current_agent.get("description"),
+        "nodes": []
+    }
+    
+    for node in current_agent.get('nodes', []):
+        agent_summary["nodes"].append({
+            "id": node.get('id'),
+            "block_id": node.get('block_id'),
+            "customized_name": node.get('metadata', {}).get('customized_name', 'Unnamed'),
+            "position": node.get('metadata', {}).get('position'),
+            "input_default": node.get('input_default', {})
+        })
+    
+    # Use getter functions for prompts
+    system_prompt = get_patch_generation_system_prompt(block_summaries)
+    human_prompt = get_patch_generation_human_prompt(agent_summary, current_agent, update_request)
     
     try:
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=human_prompt)
         ])
-        if response is None:
-            logging.error("❌ No response received from LLM")
-            return None
         
-        parsed = _parse_llm_json_or_none(str(response.text))
-        if parsed is None:
-            logging.error("❌ Error updating decomposition: Failed to parse JSON from LLM response")
-            return None
-        return parsed
-        
-    except Exception as e:
-        logging.error(f"❌ Error updating decomposition: {e}")
-        return None
-
-async def update_agent_json_incrementally(updated_instructions, current_agent_json, blocks_json):
-    """
-    Update agent JSON incrementally based on updated instructions (single attempt, no retry logic).
-    This preserves the original agent structure and only modifies parts that need changes.
-    Uses ALL the same rules as the original generate_agent_json_from_subtasks function.
-    
-    Args:
-        updated_instructions: Updated step-by-step instructions (dict or string)
-        current_agent_json: Current agent JSON to update
-        blocks_json: Available blocks data
-    
-    Returns:
-        Tuple of (updated_agent_json, error_message)
-    """
-    logging.info("Updating agent JSON incrementally...")
-    
-    # Extract block names from the structured JSON format
-    block_names = set()
-    
-    steps = updated_instructions.get("steps", [])
-    for step in steps:
-        if step.get("block_name"):
-            logging.info(f"Found block name: {step['block_name']}")
-            block_names.add(step["block_name"])
-    
-    used_blocks = []
-    for block in blocks_json:
-        block_name = block.get("name") or block.get("block_name")
-        if block_name and block_name in block_names:
-            used_blocks.append(block)
-
-    if not used_blocks:
-        used_blocks = blocks_json
-
-    example = await load_json_async(EXAMPLE_FILE)
-    example = json.dumps(example, indent=2)
-    
-    try:
-        llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-        system_prompt = get_incremental_agent_update_system_prompt(used_blocks, example)
-        
-        # Convert updated_instructions to string format for the prompt if it's JSON
-        if isinstance(updated_instructions, dict):
-            instructions_for_prompt = json.dumps(updated_instructions, indent=2)
-        else:
-            instructions_for_prompt = str(updated_instructions)
-        
-        human_prompt = get_incremental_agent_update_human_prompt(current_agent_json, instructions_for_prompt)
-        
-        response = await llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt)
-        ])
         if response is None:
             logging.error("❌ No response received from LLM")
             return None, "No response received from LLM"
         
-        updated_agent_json = _parse_llm_json_or_none(str(response.text))
-        if updated_agent_json is None:
-            logging.error("❌ Error updating agent JSON: Failed to parse JSON from LLM response")
+        result = _parse_llm_json_or_none(str(response.text))
+        if result is None:
+            logging.error("❌ Error generating patch: Failed to parse JSON from LLM response")
             return None, "Failed to parse JSON from LLM response"
         
-        agent_fixer = AgentFixer()
-        updated_agent_json = await agent_fixer.apply_all_fixes(updated_agent_json, blocks_json)
+        # Check if it's clarifying questions
+        if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+            logging.info("📋 LLM returned clarifying questions for patch generation")
+            return result, None
         
-        validator = AgentValidator()
-        is_valid, error = validator.validate(updated_agent_json, blocks_json)
-        if not is_valid:
-            return None, error
-        
-        return updated_agent_json, None
+        return result, None
         
     except Exception as e:
-        logging.error(f"❌ Error during agent update: {e}")
-        return None, f"Error updating agent JSON: {e}"
+        logging.error(f"❌ Error generating patch: {e}")
+        return None, f"Error generating patch: {e}"
 
 
-async def generate_template_modification_instructions(template_agent_json, modification_request, block_summaries, current_instructions=None):
+def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
     """
-    Generate complete modification instructions based on an existing template agent and user's modification request.
-    This creates complete step-by-step instructions that describe the entire modified workflow.
+    Apply a patch to the current agent, preserving all unchanged parts.
     
     Args:
-        template_agent_json: The existing agent template JSON
-        modification_request: User's description of desired modifications
-        block_summaries: Available block summaries
-        current_instructions: Current instructions (can be string or JSON dict, for retry scenarios)
+        current_agent: Current agent JSON
+        patch: Patch dict with intent and patches list
     
     Returns:
-        Parsed JSON dict with either:
-        - {"type": "clarifying_questions", "questions": [...]} if more information is needed
-        - {"type": "instructions", "steps": [...]} with complete workflow instructions
-        - None on error
+        Tuple of (updated_agent, error_message)
     """
-    logging.info(f"Generating template modification instructions: {modification_request}")
-    llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
-
-    # Create a mapping from block IDs to block names
-    block_id_to_name = {}
-    blocks_data = await load_json_async(BLOCK_FILE)
-    for block in blocks_data:
-        block_id = block.get('id')
-        block_name = block.get('name')
-        if block_id and block_name:
-            block_id_to_name[block_id] = block_name
+    logging.info("Applying patch to agent...")
     
-    # Analyze the current workflow by examining nodes and their connections
-    nodes = template_agent_json.get('nodes', [])
-    links = template_agent_json.get('links', [])
-    
-    # Collect unique blocks used in the template
-    blocks_used_in_template = {}
-    for node in nodes:
-        block_id = node.get('block_id', 'Unknown')
-        if block_id in block_id_to_name:
-            blocks_used_in_template[block_id] = block_id_to_name[block_id]
-    
-    # Create a description of the current template agent
-    template_description = f"""
-**Template Agent Analysis:**
-- Name: {template_agent_json.get('name', 'Unnamed')}
-- Description: {template_agent_json.get('description', 'No description')}
-- Nodes: {len(nodes)}
-- Links: {len(links)}
-
-**Blocks Used in Template:**
-"""
-    
-    # List all unique blocks used with their IDs and names
-    for block_id, block_name in blocks_used_in_template.items():
-        template_description += f"- {block_name} (ID: {block_id})\n"
-    
-    template_description += "\n**Current Workflow:**\n"
-    
-    # Create a simple workflow description with block names
-    for i, node in enumerate(nodes):
-        block_id = node.get('block_id', 'Unknown')
-        block_name = block_id_to_name.get(block_id, block_id)
-        template_description += f"{i+1}. Use `{block_name}` block\n"
-    
-    # Get prompts using the template getter functions
-    system_prompt = get_template_modification_system_prompt(block_summaries)
-    human_prompt = get_template_modification_human_prompt(template_description, modification_request, current_instructions)
-
     try:
-        response = await llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=human_prompt)
-        ])
-        if response is None:
-            logging.error("❌ No response received from LLM")
-            return None
+        # Deep copy to avoid mutating original
+        import copy
+        updated_agent = copy.deepcopy(current_agent)
         
-        parsed = _parse_llm_json_or_none(str(response.text))
-        if parsed is None:
-            logging.error("❌ Error generating template modification instructions: Failed to parse JSON from LLM response")
-            return None
+        patches = patch.get('patches', [])
         
-        logging.info(f"✅ Generated template modification instructions successfully")
-        return parsed
+        for patch_item in patches:
+            patch_type = patch_item.get('type')
+            
+            if patch_type == 'modify':
+                # Modify existing node
+                node_id = patch_item.get('node_id')
+                changes = patch_item.get('changes', {})
+                
+                for node in updated_agent['nodes']:
+                    if node['id'] == node_id:
+                        # Apply changes recursively
+                        _deep_update(node, changes)
+                        logging.info(f"✓ Modified node {node_id}")
+                        break
+            
+            elif patch_type == 'add':
+                # Add new nodes and links
+                new_nodes = patch_item.get('new_nodes', [])
+                new_links = patch_item.get('new_links', [])
+                
+                # Inherit graph_id and graph_version
+                graph_id = updated_agent.get('id')
+                graph_version = updated_agent.get('version', 1)
+                
+                for new_node in new_nodes:
+                    if new_node.get('graph_id') == 'inherit':
+                        new_node['graph_id'] = graph_id
+                    if new_node.get('graph_version') == 'inherit':
+                        new_node['graph_version'] = graph_version
+                    
+                    updated_agent['nodes'].append(new_node)
+                    logging.info(f"✓ Added node {new_node.get('id')}")
+                
+                updated_agent['links'].extend(new_links)
+                logging.info(f"✓ Added {len(new_links)} link(s)")
+            
+            elif patch_type == 'delete':
+                # Remove nodes and their links
+                node_ids_to_delete = patch_item.get('node_ids', [])
+                
+                # Remove nodes
+                updated_agent['nodes'] = [
+                    node for node in updated_agent['nodes']
+                    if node['id'] not in node_ids_to_delete
+                ]
+                
+                # Remove associated links
+                updated_agent['links'] = [
+                    link for link in updated_agent['links']
+                    if link.get('source_id') not in node_ids_to_delete
+                    and link.get('sink_id') not in node_ids_to_delete
+                ]
+                
+                logging.info(f"✓ Deleted {len(node_ids_to_delete)} node(s)")
+                
+                # Handle reconnection if specified
+                reconnect = patch_item.get('reconnect')
+                if reconnect and reconnect.get('maintain_data_flow'):
+                    # Create new link to maintain flow
+                    # This would need more sophisticated logic
+                    pass
+            
+            elif patch_type == 'replace':
+                # Replace node
+                node_id = patch_item.get('node_id')
+                new_node = patch_item.get('new_node')
+                update_links = patch_item.get('update_links', [])
+                
+                # Replace the node
+                for i, node in enumerate(updated_agent['nodes']):
+                    if node['id'] == node_id:
+                        # Preserve position if not specified
+                        if 'position' not in new_node.get('metadata', {}):
+                            new_node.setdefault('metadata', {})['position'] = node.get('metadata', {}).get('position')
+                        
+                        updated_agent['nodes'][i] = new_node
+                        logging.info(f"✓ Replaced node {node_id}")
+                        break
+                
+                # Update affected links
+                for link_update in update_links:
+                    link_id = link_update.get('link_id')
+                    link_changes = link_update.get('changes', {})
+                    
+                    for link in updated_agent['links']:
+                        if link['id'] == link_id:
+                            _deep_update(link, link_changes)
+                            break
+        
+        return updated_agent, None
         
     except Exception as e:
-        logging.error(f"❌ Error generating template modification instructions: {e}")
-        return None
+        logging.error(f"❌ Error applying patch: {e}")
+        return None, f"Error applying patch: {e}"
+
+
+def _deep_update(target: dict, updates: dict):
+    """
+    Deep update a dictionary, merging nested dicts recursively.
+    """
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+
+async def update_agent_json_incrementally(update_request: str, current_agent_json: dict, blocks_json: list, max_retries: int = 2):
+    """
+    Update agent JSON using patch-based incremental updates.
+    This preserves unchanged parts exactly and only modifies what's necessary.
+    Supports clarifying questions, validation, fixing, and retry logic.
+    
+    Args:
+        update_request: User's natural language update request (e.g., "Add error handling to step 3")
+        current_agent_json: Current agent JSON to update
+        blocks_json: Available blocks data
+        max_retries: Maximum number of retries if validation fails (default: 2)
+    
+    Returns:
+        Tuple of (result, error_message)
+        result can be:
+        - {"type": "clarifying_questions", "questions": [...]} if more info needed
+        - updated_agent_json dict if successful
+        - None if failed
+    """
+    logging.info(f"Updating agent incrementally with request: {update_request}")
+    
+    try:
+        # Get block summaries for context
+        block_summaries = [
+            {
+                "id": block["id"],
+                "name": block["name"],
+                "description": block.get("description", ""),
+                "inputs_schema": block.get("inputSchema", {}),
+                "outputs_schema": block.get("outputSchema", {})
+            } for block in blocks_json
+        ]
+        
+        # Retry loop for patch generation and application
+        for retry_count in range(max_retries + 1):
+            if retry_count > 0:
+                logging.info(f"🔄 Retry attempt {retry_count}/{max_retries}")
+            
+            # Step 1: Generate the patch (may return clarifying questions)
+            result, error = await generate_agent_patch(
+                update_request,
+                current_agent_json,
+                block_summaries,
+                blocks_json
+            )
+            
+            if error:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ Patch generation failed: {error}. Retrying...")
+                    continue
+                return None, error
+            
+            if not result:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ No patch generated. Retrying...")
+                    continue
+                return None, "Failed to generate patch"
+            
+            # Check if LLM returned clarifying questions
+            if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+                logging.info("📋 Returning clarifying questions to user")
+                return result, None
+            
+            # Step 2: Apply the patch
+            logging.info(f"Applying patch with {len(result.get('patches', []))} operations")
+            updated_agent, error = apply_agent_patch(current_agent_json, result)
+            
+            if error:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ Patch application failed: {error}. Retrying...")
+                    update_request = f"{update_request}\n\nPrevious attempt failed with error: {error}\nPlease fix this issue."
+                    continue
+                return None, error
+            
+            if not updated_agent:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ Patch application returned no agent. Retrying...")
+                    continue
+                return None, "Failed to apply patch"
+            
+            # Step 3: Fix any issues
+            agent_fixer = AgentFixer()
+            updated_agent = await agent_fixer.apply_all_fixes(updated_agent, blocks_json)
+            
+            fixes_applied = agent_fixer.get_fixes_applied()
+            if fixes_applied:
+                logging.info(f"🔧 Applied {len(fixes_applied)} automatic fixes to patched agent")
+            
+            # Step 4: Validate the result
+            validator = AgentValidator()
+            is_valid, validation_error = validator.validate(updated_agent, blocks_json)
+            
+            if not is_valid:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ Validation failed: {validation_error}. Retrying with feedback...")
+                    # Enhance update request with validation feedback for next retry
+                    update_request = f"{update_request}\n\n**Validation Error from Previous Attempt:**\n{validation_error}\n\nPlease generate a patch that addresses these validation errors."
+                    continue
+                return None, validation_error
+            
+            # Success!
+            logging.info("✅ Agent updated successfully with patch-based system")
+            return updated_agent, None
+        
+        # Should not reach here, but just in case
+        return None, f"Failed to update agent after {max_retries + 1} attempts"
+        
+    except Exception as e:
+        logging.error(f"❌ Error during patch-based agent update: {e}")
+        return None, f"Error updating agent: {e}"
+
+

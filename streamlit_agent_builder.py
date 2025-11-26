@@ -22,9 +22,7 @@ from agent_builder import (
     decompose_description, 
     get_block_summaries, 
     generate_agent_json_from_subtasks,
-    update_decomposition_incrementally,
     update_agent_json_incrementally,
-    generate_template_modification_instructions,
 )
 
 # =============================================================================
@@ -438,38 +436,9 @@ def render_decomposition_review_stage():
     render_error_message()
     st.title("📋 Review Instructions")
     
-    # Determine if we're in improvement mode or initial creation
-    if st.session_state.improvement_mode:
-        st.markdown("**Step 3: Review Updated Instructions**")
-        instructions_to_show = st.session_state.updated_instructions
-        if instructions_to_show:
-            st.write("✅ I've updated the instructions based on your request:")
-            st.text_area("Updated Instructions:", instructions_to_show, height=300, disabled=True)
-            
-            # Auto mode indicator
-            if st.session_state.auto_mode:
-                st.success("🚀 **Auto Mode Active** - Generating updated agent automatically...")
-                # Auto-proceed after a short delay
-                import time
-                time.sleep(1)
-                generate_updated_agent()
-                return
-            
-            # Options for improvement mode
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"🚀 Generate Updated Agent", key=f"generate_updated {st.session_state.generation_counter + 1}", use_container_width=True):
-                    st.session_state.selected_option = f"Generate Updated Agent"
-                    handle_option_selection(st.session_state.selected_option)
-                    st.rerun()
-            with col2:
-                if st.button("✏️ Edit instructions", key="edit_instructions", use_container_width=True):
-                    st.session_state.selected_option = "Edit instructions"
-                    handle_option_selection("Edit instructions")
-                    st.rerun()
-        else:
-            st.error("No updated instructions available. Please try again.")
-    else:
+    # Note: Improvement mode now bypasses this stage entirely (goes direct to agent_results)
+    # This stage is only for initial agent creation workflow
+    if not st.session_state.improvement_mode:
         st.markdown("**Step 3: Review Instructions**")
         if st.session_state.current_decomposition:
             st.write("✅ I've generated step-by-step instructions for your goal:")
@@ -504,66 +473,36 @@ def render_final_stage():
     render_error_message()
     st.title("🚀 Ready to Generate")
     
-    # Determine if we're in improvement mode or initial creation
-    if st.session_state.improvement_mode:
-        st.markdown("**Step 4: Final Review - Updated Agent**")
-        instructions_to_show = st.session_state.updated_instructions
-        if instructions_to_show:
-            st.write("✅ Updated instructions finalized! Ready to generate your updated agent.")
-            st.text_area("Final Updated Instructions:", instructions_to_show, height=300, disabled=True)
-            
-            # Auto mode indicator
-            if st.session_state.auto_mode:
-                st.success("🚀 **Auto Mode Active** - Generating updated agent automatically...")
-                # Auto-proceed after a short delay
-                import time
-                time.sleep(1)
-                generate_updated_agent()
-                return
-            
-            # Options for improvement mode
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"🚀 Generate Updated Agent", key="generate_updated_final", use_container_width=True):
-                    st.session_state.selected_option = f"Generate Updated Agent"
-                    handle_option_selection(st.session_state.selected_option)
-                    st.rerun()
-            with col2:
-                if st.button("✏️ Edit instructions", key="edit_final", use_container_width=True):
-                    st.session_state.selected_option = "Edit instructions"
-                    handle_option_selection("Edit instructions")
-                    st.rerun()
-        else:
-            st.error("No updated instructions available. Please try again.")
+    # Note: Improvement mode now bypasses this stage (goes direct to agent_results)
+    # This stage is only for initial agent creation workflow
+    st.markdown("**Step 4: Final Review**")
+    if st.session_state.final_instructions:
+        st.write("✅ Instructions finalized! Ready to generate your agent.")
+        st.text_area("Final Instructions:", st.session_state.final_instructions, height=300, disabled=True)
+        
+        # Auto mode indicator
+        if st.session_state.auto_mode:
+            st.success("🚀 **Auto Mode Active** - Generating agent automatically...")
+            # Auto-proceed after a short delay
+            import time
+            time.sleep(1)
+            generate_agent()
+            return
+        
+        # Options for initial creation
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 Generate Agent", key="generate_agent", use_container_width=True):
+                st.session_state.selected_option = "Generate Agent"
+                handle_option_selection("Generate Agent")
+                st.rerun()
+        with col2:
+            if st.button("✏️ Edit instructions", key="edit_final", use_container_width=True):
+                st.session_state.selected_option = "Edit instructions"
+                handle_option_selection("Edit instructions")
+                st.rerun()
     else:
-        st.markdown("**Step 4: Final Review**")
-        if st.session_state.final_instructions:
-            st.write("✅ Instructions finalized! Ready to generate your agent.")
-            st.text_area("Final Instructions:", st.session_state.final_instructions, height=300, disabled=True)
-            
-            # Auto mode indicator
-            if st.session_state.auto_mode:
-                st.success("🚀 **Auto Mode Active** - Generating agent automatically...")
-                # Auto-proceed after a short delay
-                import time
-                time.sleep(1)
-                generate_agent()
-                return
-            
-            # Options for initial creation
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🚀 Generate Agent", key="generate_agent", use_container_width=True):
-                    st.session_state.selected_option = "Generate Agent"
-                    handle_option_selection("Generate Agent")
-                    st.rerun()
-            with col2:
-                if st.button("✏️ Edit instructions", key="edit_final", use_container_width=True):
-                    st.session_state.selected_option = "Edit instructions"
-                    handle_option_selection("Edit instructions")
-                    st.rerun()
-        else:
-            st.error("No final instructions available. Please try again.")
+        st.error("No final instructions available. Please try again.")
 
 def render_agent_results_stage():
     """Render the agent results stage."""
@@ -652,9 +591,14 @@ def render_agent_chat_stage():
     """Render the agent improvement chat stage."""
     render_error_message()
     st.title("💬 Agent Improvement")
-    st.markdown("**Agent Improvement Mode**")
+    st.markdown("**Agent Improvement Mode - Patch-Based Updates**")
     
-    st.write("I'm here to help you improve your existing agent. Please describe what changes you'd like to make to your agent.")
+    st.info("🔧 **Surgical Updates**: Your changes will be applied using patch-based updates, which only modify targeted parts while preserving everything else exactly as it is.")
+    
+    st.write("Please describe what changes you'd like to make to your agent. For example:")
+    st.write("- Add error handling to step 3")
+    st.write("- Change the output format to JSON")
+    st.write("- Remove the weather check step")
     
     # Show current agent info if available
     if st.session_state.agent_json:
@@ -703,36 +647,22 @@ def render_template_instructions_stage():
     render_input_area()
 
 def render_template_modification_review_stage():
-    """Render the template modification review stage."""
-    render_error_message()
-    st.title("📋 Review Template Modifications")
-    st.markdown("**Step 3: Review Modifications**")
+    """Render the template modification review stage.
     
-    if st.session_state.updated_instructions:
-        st.write("✅ I've generated modified instructions based on your template and request:")
-        st.text_area("Modified Instructions:", st.session_state.updated_instructions, height=300, disabled=True)
-        
-        # Auto mode indicator
-        if st.session_state.auto_mode:
-            st.success("🚀 **Auto Mode Active** - Generating modified agent automatically...")
-            # Auto-proceed after a short delay
-            import time
-            time.sleep(1)
-            generate_modified_agent_from_template()
-            return
-        
-        # Options
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🚀 Generate Modified Agent", key="generate_modified", use_container_width=True):
-                st.session_state.selected_option = "Generate Modified Agent"
-                handle_option_selection("Generate Modified Agent")
-                st.rerun()
-        with col2:
-            if st.button("✏️ Edit modifications", key="edit_modifications", use_container_width=True):
-                st.session_state.selected_option = "Edit modifications"
-                handle_option_selection("Edit modifications")
-                st.rerun()
+    Note: This stage is now bypassed with the patch-based update system.
+    Template modifications go directly from request → agent_results (or clarification).
+    This function is kept for backward compatibility but should not be reached in normal flow.
+    """
+    render_error_message()
+    st.title("📋 Template Modification")
+    st.markdown("**Note:** This step has been streamlined with the new patch-based update system.")
+    
+    st.info("⚡ Template modifications now use the same robust patch-based system as agent improvements, going directly to results!")
+    
+    # Redirect to agent results if somehow we ended up here
+    if st.button("Continue to Results"):
+        st.session_state.current_step = "agent_results"
+        st.rerun()
 
 def render_current_stage():
     """Render the current stage based on current_step."""
@@ -977,37 +907,24 @@ def handle_option_selection(option: str):
         elif option == "Edit instructions":
             st.session_state.current_step = "goal_input"
             st.rerun()
-        elif option == "Generate Updated Agent":
-            generate_updated_agent()
     elif st.session_state.current_step == "final":
         if option == "Generate Agent":
             generate_agent()
         elif option == "Edit instructions":
             st.session_state.current_step = "decomposition_review"
             st.rerun()
-        elif option == "Generate Updated Agent":
-            generate_updated_agent()
     elif st.session_state.current_step == "agent_chat":
-        if option.startswith("Generate Updated Agent"):
-            generate_updated_agent()
-        elif option == "Edit instructions":
-            st.session_state.current_step = "decomposition_review"
-            st.rerun()
-        elif option == "Start New Agent":
+        if option == "Start New Agent":
             reset_chat()
             start_new_agent_creation()
         elif option == "Try Different Improvement":
             st.session_state.current_step = "agent_chat"
             st.rerun()
-        elif option == "Generate Modified Agent":
-            generate_modified_agent_from_template()
-        elif option == "Edit modifications":
-            st.session_state.current_step = "template_instructions"
-            st.rerun()
+        # Note: Template modification now uses direct patch-based updates
+        # No separate generation step needed
     elif st.session_state.current_step == "template_modification_review":
-        if option == "Generate Modified Agent":
-            generate_modified_agent_from_template()
-        elif option == "Edit modifications":
+        # Note: This step is now bypassed - template modifications go directly to agent_results
+        if option == "Edit modifications":
             st.session_state.current_step = "template_instructions"
             st.rerun()
     elif st.session_state.current_step == "agent_results":
@@ -1048,82 +965,69 @@ def handle_template_uploaded(agent_json: dict):
     st.rerun()
 
 def handle_template_modification_request(modification_request: str):
-    """Handle template modification request."""
+    """Handle template modification request using patch-based updates."""
     st.session_state.template_modification_instructions = modification_request
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Processing template modification request..."):
+    with st.spinner("Applying patch-based update to template agent..."):
         try:
-            # Generate instructions based on the template and modification request
-            updated_instructions = asyncio.run(
-                generate_template_modification_instructions(
-                    st.session_state.template_agent_json,
+            # Use patch-based update system directly
+            result, error = asyncio.run(
+                update_agent_json_incrementally(
                     modification_request,
-                    block_summaries
+                    st.session_state.template_agent_json,
+                    blocks
                 )
             )
             
-            if not updated_instructions:
-                st.session_state.error_message = "Failed to generate modification instructions"
+            if error:
+                st.session_state.error_message = f"Error modifying template: {error}"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
                 return
             
-            # Check if updated_instructions contains clarifying questions (new JSON format)
-            if isinstance(updated_instructions, dict) and updated_instructions.get("type") == "clarifying_questions":
-                st.session_state.template_clarifying_questions = updated_instructions
-                st.session_state.template_parsed_questions = updated_instructions.get("questions", [])
-                # Switch step so option clicks are handled by clarification flow
+            if not result:
+                st.session_state.error_message = "Failed to modify template agent"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
+                st.rerun()
+                return
+            
+            # Check if result is clarifying questions
+            if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+                st.session_state.template_clarifying_questions = result
+                st.session_state.template_parsed_questions = result.get("questions", [])
+                st.session_state.template_question_answers = {}
+                st.session_state.current_question_index = 0
                 st.session_state.current_step = "clarification"
                 st.rerun()
-                
-            # Handle unachievable modification (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "unachievable_goal":
-                st.session_state.last_decomposition = updated_instructions
-                st.session_state.current_step = "goal_suggestion"
-                st.rerun()
-                
-            # Handle vague modification (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "vague_goal":
-                st.session_state.last_decomposition = updated_instructions
-                st.session_state.current_step = "goal_suggestion"
-                st.rerun()
-                
-            # Check for old text format
-            elif isinstance(updated_instructions, str) and "❓ Clarifying Questions:" in updated_instructions:
-                st.session_state.template_clarifying_questions = updated_instructions
-                st.session_state.template_parsed_questions = parse_clarifying_questions(updated_instructions)
-                st.session_state.current_step = "clarification"
-                st.rerun()
-                
-            # Handle updated instructions (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "instructions":
-                instructions_text = "**Modified Step-by-Step Instructions:**\n"
-                for step in updated_instructions.get("steps", []):
-                    instructions_text += f"{step.get('step_number', '')}. {step.get('description', '')}\n"
-                    if step.get('inputs'):
-                        instructions_text += "   Inputs:\n"
-                        for input_item in step['inputs']:
-                            instructions_text += f"   - {input_item.get('name', '')}: {input_item.get('value', '')}\n"
-                    if step.get('outputs'):
-                        instructions_text += "   Outputs:\n"
-                        for output_item in step['outputs']:
-                            instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
-                    instructions_text += "\n"
-                
-                # Store both formatted text for UI and raw JSON for agent generation
-                st.session_state.updated_instructions = instructions_text
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.current_step = "template_modification_review"
-                st.rerun()
-                
-            else:
-                st.session_state.updated_instructions = ""
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.current_step = "template_modification_review"
-                st.rerun()
+                return
+            
+            # Success - modified agent generated with patch-based system
+            st.session_state.agent_json = result
+            st.session_state.working_agent_json = result
+            st.session_state.generation_counter += 1
+            
+            # Save agent
+            agent_name = result.get("name", "agent")
+            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+            agent_json_path = OUTPUT_DIR / f"{filename}.json"
+            
+            try:
+                with open(agent_json_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+            
+            # Go to agent results
+            st.session_state.current_step = "agent_results"
+            st.rerun()
                 
         except Exception as e:
-            st.session_state.error_message = f"Error processing template modification request: {str(e)}"
+            st.session_state.error_message = f"Error processing template modification: {str(e)}"
+            st.session_state.agent_json = None
+            st.session_state.current_step = "agent_results"
             st.rerun()
 
 def handle_goal_input(goal: str):
@@ -1390,190 +1294,75 @@ def generate_agent():
     st.session_state.current_step = "agent_results"
     st.rerun()
 
-def generate_updated_agent():
-    """Generate the updated agent with instruction-level retry on validation errors."""
-    current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
-    st.session_state.error_message = None  # Clear previous errors
-    
-    max_instruction_retries = 1  # Number of times to retry by updating instructions
-    
-    for retry_count in range(max_instruction_retries + 1):
-        with st.spinner(f"Generating your updated agent{f' (retry {retry_count})' if retry_count > 0 else ''}..."):
-            try:
-                agent_json, error = asyncio.run(
-                    update_agent_json_incrementally(
-                        current_instructions,
-                        st.session_state.working_agent_json,  # Use the working agent JSON
-                        blocks
-                    )
-                )
-                
-                if error:
-                    # Validation error occurred
-                    if retry_count < max_instruction_retries:
-                        # Try to update instructions based on validation error
-                        st.warning(f"⚠️ Validation error detected. Updating instructions and retrying...")
-                        
-                        with st.spinner("Updating instructions based on validation error..."):
-                            try:
-                                # Get the original instructions that were used for the improvement
-                                original_instructions = (
-                                    st.session_state.updated_instructions_json or 
-                                    st.session_state.final_instructions_json or 
-                                    st.session_state.current_decomposition_json
-                                )
-                                
-                                # Update instructions based on validation error
-                                updated_instructions = asyncio.run(
-                                    update_decomposition_incrementally(
-                                        st.session_state.improvement_request or "Fix validation errors",
-                                        original_instructions,
-                                        block_summaries,
-                                        original_updated_instructions=current_instructions,
-                                        validation_error=error
-                                    )
-                                )
-                                
-                                if not updated_instructions:
-                                    st.session_state.error_message = f"Error generating updated agent: {error}\n\nFailed to update instructions for retry."
-                                    st.session_state.agent_json = None
-                                    break
-                                
-                                # Check if the updated instructions are valid (not questions or suggestions)
-                                if isinstance(updated_instructions, dict):
-                                    if updated_instructions.get("type") in ["clarifying_questions", "unachievable_goal", "vague_goal"]:
-                                        st.session_state.error_message = f"Error generating updated agent: {error}\n\nCould not fix validation error automatically."
-                                        st.session_state.agent_json = None
-                                        break
-                                    elif updated_instructions.get("type") == "instructions":
-                                        current_instructions = updated_instructions
-                                        continue  # Retry with updated instructions
-                                
-                                # If we got a string response, try to parse it
-                                current_instructions = updated_instructions
-                                continue  # Retry with updated instructions
-                                
-                            except Exception as update_error:
-                                st.session_state.error_message = f"Error generating updated agent: {error}\n\nError updating instructions: {str(update_error)}"
-                                st.session_state.agent_json = None
-                                break
-                    else:
-                        # Max retries reached
-                        st.session_state.error_message = f"Error generating updated agent after {max_instruction_retries + 1} attempts: {error}"
-                        st.session_state.agent_json = None
-                        break
-                else:
-                    # Success - updated agent generated
-                    st.session_state.agent_json = agent_json
-                    st.session_state.working_agent_json = agent_json  # Update working agent JSON for next improvement iteration
-                    st.session_state.generation_counter += 1  # Increment generation counter
-                    
-                    # Save agent
-                    agent_name = agent_json.get("name", "agent")
-                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-                    agent_json_path = OUTPUT_DIR / f"{filename}.json"
-                    
-                    try:
-                        with open(agent_json_path, "w", encoding="utf-8") as f:
-                            json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                    except Exception as e:
-                        st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-                    
-                    break  # Success, exit retry loop
-                
-            except Exception as e:
-                st.session_state.error_message = f"Error during updated generation: {str(e)}"
-                st.session_state.agent_json = None
-                break
-    
-    # Always go to agent_results step, even on failure
-    st.session_state.current_step = "agent_results"
-    st.rerun()
+# Function removed - now using direct patch-based updates in handle_improvement_request()
 
 def handle_improvement_request(improvement_request: str):
-    """Handle agent improvement request."""
+    """Handle agent improvement request using patch-based updates."""
     st.session_state.improvement_request = improvement_request
     st.session_state.current_agent_json = st.session_state.agent_json
     # Set the working agent JSON to the most recent one (this will be updated with each improvement)
     st.session_state.working_agent_json = st.session_state.agent_json
     st.session_state.error_message = None  # Clear previous errors
     
-    with st.spinner("Processing improvement request..."):
+    with st.spinner("Applying patch-based update to agent..."):
         try:
-            # Use the most recent instructions - either updated_instructions from previous chat or original
-            current_instructions = st.session_state.updated_instructions_json or st.session_state.final_instructions_json or st.session_state.current_decomposition_json
-            
-            updated_instructions = asyncio.run(
-                update_decomposition_incrementally(
+            # Patch-based update with clarifying questions support
+            result, error = asyncio.run(
+                update_agent_json_incrementally(
                     improvement_request,
-                    current_instructions,
-                    block_summaries
+                    st.session_state.working_agent_json,
+                    blocks
                 )
             )
             
-            if not updated_instructions:
-                st.session_state.error_message = "Failed to update instructions"
+            if error:
+                st.session_state.error_message = f"Error updating agent: {error}"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
                 return
             
-            # Check if updated_instructions contains clarifying questions (new JSON format)
-            if isinstance(updated_instructions, dict) and updated_instructions.get("type") == "clarifying_questions":
-                st.session_state.chat_clarifying_questions = updated_instructions
-                st.session_state.chat_parsed_questions = updated_instructions.get("questions", [])
-                # Switch step so option clicks are handled by clarification flow
+            if not result:
+                st.session_state.error_message = "Failed to update agent"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
+                st.rerun()
+                return
+            
+            # Check if result is clarifying questions
+            if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+                st.session_state.chat_clarifying_questions = result
+                st.session_state.chat_parsed_questions = result.get("questions", [])
+                st.session_state.chat_question_answers = {}
+                st.session_state.current_question_index = 0
                 st.session_state.current_step = "clarification"
                 st.rerun()
-                
-            # Handle unachievable improvement (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "unachievable_goal":
-                st.session_state.last_decomposition = updated_instructions
-                st.session_state.current_step = "goal_suggestion"
-                st.rerun()
-                
-            # Handle vague improvement (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "vague_goal":
-                st.session_state.last_decomposition = updated_instructions
-                st.session_state.current_step = "goal_suggestion"
-                st.rerun()
-                
-            # Check for old text format
-            elif isinstance(updated_instructions, str) and "❓ Clarifying Questions:" in updated_instructions:
-                st.session_state.chat_clarifying_questions = updated_instructions
-                st.session_state.chat_parsed_questions = parse_clarifying_questions(updated_instructions)
-                st.session_state.current_step = "clarification"
-                st.rerun()
-                
-            # Handle updated instructions (new JSON format)
-            elif isinstance(updated_instructions, dict) and updated_instructions.get("type") == "instructions":
-                instructions_text = "**Updated Step-by-Step Instructions:**\n"
-                for step in updated_instructions.get("steps", []):
-                    instructions_text += f"{step.get('step_number', '')}. {step.get('description', '')}\n"
-                    if step.get('inputs'):
-                        instructions_text += "   Inputs:\n"
-                        for input_item in step['inputs']:
-                            instructions_text += f"   - {input_item.get('name', '')}: {input_item.get('value', '')}\n"
-                    if step.get('outputs'):
-                        instructions_text += "   Outputs:\n"
-                        for output_item in step['outputs']:
-                            instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
-                    instructions_text += "\n"
-                
-                # Store both formatted text for UI and raw JSON for agent generation
-                st.session_state.updated_instructions = instructions_text
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.original_instructions = current_instructions
-                st.session_state.current_step = "decomposition_review"
-                st.rerun()
-                
-            # Handle old text format instructions
-            else:
-                st.session_state.updated_instructions = updated_instructions
-                st.session_state.original_instructions = current_instructions
-                st.session_state.current_step = "decomposition_review"
-                st.rerun()
+                return
+            
+            # Success - updated agent generated with patch-based system
+            st.session_state.agent_json = result
+            st.session_state.working_agent_json = result  # Update working agent JSON for next improvement iteration
+            st.session_state.generation_counter += 1  # Increment generation counter
+            
+            # Save agent
+            agent_name = result.get("name", "agent")
+            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+            agent_json_path = OUTPUT_DIR / f"{filename}.json"
+            
+            try:
+                with open(agent_json_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+            
+            # Go to agent results
+            st.session_state.current_step = "agent_results"
+            st.rerun()
                 
         except Exception as e:
             st.session_state.error_message = f"Error processing improvement request: {str(e)}"
+            st.session_state.agent_json = None
+            st.session_state.current_step = "agent_results"
             st.rerun()
 
 def handle_improvement_question_answer(answer: str):
@@ -1657,199 +1446,133 @@ def create_enhanced_template_modification_request_with_answers():
     return base_request + answers_summary
 
 def process_enhanced_improvement_request(enhanced_request: str):
-    """Process the enhanced improvement request with answers."""
+    """Process the enhanced improvement request with answers using patch-based updates."""
     st.session_state.error_message = None  # Clear previous errors
-    with st.spinner("Processing enhanced improvement request..."):
+    with st.spinner("Applying patch-based update to agent..."):
         try:
-            # Use the most recent instructions - either updated_instructions from previous chat or original
-            current_instructions = st.session_state.updated_instructions_json or st.session_state.final_instructions_json or st.session_state.current_decomposition_json
-            
-            updated_instructions = asyncio.run(
-                update_decomposition_incrementally(
+            # Patch-based update with enhanced request (supports clarifying questions)
+            result, error = asyncio.run(
+                update_agent_json_incrementally(
                     enhanced_request,
-                    current_instructions,
-                    block_summaries
+                    st.session_state.working_agent_json,
+                    blocks
                 )
             )
             
-            if not updated_instructions:
-                st.session_state.error_message = "Failed to update instructions"
+            if error:
+                st.session_state.error_message = f"Error updating agent: {error}"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
                 return
             
-            # Handle the updated instructions (should be instructions now, not questions)
-            if isinstance(updated_instructions, dict) and updated_instructions.get("type") == "instructions":
-                instructions_text = "**Updated Step-by-Step Instructions:**\n"
-                for step in updated_instructions.get("steps", []):
-                    instructions_text += f"{step.get('step_number', '')}. {step.get('description', '')}\n"
-                    if step.get('inputs'):
-                        instructions_text += "   Inputs:\n"
-                        for input_item in step['inputs']:
-                            instructions_text += f"   - {input_item.get('name', '')}: {input_item.get('value', '')}\n"
-                    if step.get('outputs'):
-                        instructions_text += "   Outputs:\n"
-                        for output_item in step['outputs']:
-                            instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
-                    instructions_text += "\n"
-                
-                # Store both formatted text for UI and raw JSON for agent generation
-                st.session_state.updated_instructions = instructions_text
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.original_instructions = current_instructions
-                st.session_state.current_step = "decomposition_review"
+            if not result:
+                st.session_state.error_message = "Failed to update agent"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
-                
-            else:
-                st.session_state.updated_instructions = updated_instructions
-                st.session_state.original_instructions = current_instructions
-                st.session_state.current_step = "decomposition_review"
+                return
+            
+            # Check if result is clarifying questions (shouldn't happen after answering, but handle it)
+            if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+                st.session_state.chat_clarifying_questions = result
+                st.session_state.chat_parsed_questions = result.get("questions", [])
+                st.session_state.chat_question_answers = {}
+                st.session_state.current_question_index = 0
+                st.session_state.current_step = "clarification"
                 st.rerun()
+                return
+            
+            # Success - updated agent generated
+            st.session_state.agent_json = result
+            st.session_state.working_agent_json = result
+            st.session_state.generation_counter += 1
+            
+            # Save agent
+            agent_name = result.get("name", "agent")
+            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+            agent_json_path = OUTPUT_DIR / f"{filename}.json"
+            
+            try:
+                with open(agent_json_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+            
+            st.session_state.current_step = "agent_results"
+            st.rerun()
                 
         except Exception as e:
             st.session_state.error_message = f"Error processing enhanced improvement request: {str(e)}"
+            st.session_state.agent_json = None
+            st.session_state.current_step = "agent_results"
             st.rerun()
 
 def process_enhanced_template_modification_request(enhanced_request: str):
-    """Process the enhanced template modification request with answers."""
+    """Process the enhanced template modification request with answers using patch-based updates."""
     st.session_state.error_message = None  # Clear previous errors
-    with st.spinner("Processing enhanced template modification request..."):
+    with st.spinner("Applying patch-based update to template agent..."):
         try:
-            # Generate instructions based on the template and enhanced modification request
-            updated_instructions = asyncio.run(
-                generate_template_modification_instructions(
-                    st.session_state.template_agent_json,
+            # Use patch-based update system directly with enhanced request
+            result, error = asyncio.run(
+                update_agent_json_incrementally(
                     enhanced_request,
-                    block_summaries
+                    st.session_state.template_agent_json,
+                    blocks
                 )
             )
             
-            if not updated_instructions:
-                st.session_state.error_message = "Failed to generate modification instructions"
+            if error:
+                st.session_state.error_message = f"Error modifying template: {error}"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
                 return
             
-            # Handle the updated instructions (should be instructions now, not questions)
-            if isinstance(updated_instructions, dict) and updated_instructions.get("type") == "instructions":
-                instructions_text = "**Modified Step-by-Step Instructions:**\n"
-                for step in updated_instructions.get("steps", []):
-                    instructions_text += f"{step.get('step_number', '')}. {step.get('description', '')}\n"
-                    if step.get('inputs'):
-                        instructions_text += "   Inputs:\n"
-                        for input_item in step['inputs']:
-                            instructions_text += f"   - {input_item.get('name', '')}: {input_item.get('value', '')}\n"
-                    if step.get('outputs'):
-                        instructions_text += "   Outputs:\n"
-                        for output_item in step['outputs']:
-                            instructions_text += f"   - {output_item.get('name', '')}: {output_item.get('description', '')}\n"
-                    instructions_text += "\n"
-                
-                # Store both formatted text for UI and raw JSON for agent generation
-                st.session_state.updated_instructions = instructions_text
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.current_step = "template_modification_review"
+            if not result:
+                st.session_state.error_message = "Failed to modify template agent"
+                st.session_state.agent_json = None
+                st.session_state.current_step = "agent_results"
                 st.rerun()
-                
-            else:
-                st.session_state.updated_instructions = updated_instructions
-                st.session_state.updated_instructions_json = updated_instructions
-                st.session_state.current_step = "template_modification_review"
+                return
+            
+            # Check if result is clarifying questions (shouldn't happen after answering, but handle it)
+            if isinstance(result, dict) and result.get("type") == "clarifying_questions":
+                st.session_state.template_clarifying_questions = result
+                st.session_state.template_parsed_questions = result.get("questions", [])
+                st.session_state.template_question_answers = {}
+                st.session_state.current_question_index = 0
+                st.session_state.current_step = "clarification"
                 st.rerun()
+                return
+            
+            # Success - modified agent generated
+            st.session_state.agent_json = result
+            st.session_state.working_agent_json = result
+            st.session_state.generation_counter += 1
+            
+            # Save agent
+            agent_name = result.get("name", "agent")
+            filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
+            agent_json_path = OUTPUT_DIR / f"{filename}.json"
+            
+            try:
+                with open(agent_json_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                st.warning(f"⚠️ Warning: Could not save agent file: {e}")
+            
+            st.session_state.current_step = "agent_results"
+            st.rerun()
                 
         except Exception as e:
-            st.session_state.error_message = f"Error processing enhanced template modification request: {str(e)}"
+            st.session_state.error_message = f"Error processing enhanced template modification: {str(e)}"
+            st.session_state.agent_json = None
+            st.session_state.current_step = "agent_results"
             st.rerun()
 
-def generate_modified_agent_from_template():
-    """Generate the modified agent with instruction-level retry on validation errors."""
-    current_instructions = st.session_state.updated_instructions_json or st.session_state.updated_instructions
-    st.session_state.error_message = None  # Clear previous errors
-    
-    max_instruction_retries = 1  # Number of times to retry by updating instructions
-    
-    for retry_count in range(max_instruction_retries + 1):
-        with st.spinner(f"Generating your modified agent{f' (retry {retry_count})' if retry_count > 0 else ''}..."):
-            try:
-                agent_json, error = asyncio.run(
-                    update_agent_json_incrementally(
-                        current_instructions,
-                        st.session_state.template_agent_json,  # Use template as base
-                        blocks
-                    )
-                )
-                
-                if error:
-                    # Validation error occurred
-                    if retry_count < max_instruction_retries:
-                        # Try to update instructions based on validation error
-                        st.warning(f"⚠️ Validation error detected. Updating instructions and retrying...")
-                        
-                        with st.spinner("Updating instructions based on validation error..."):
-                            try:
-                                # Update instructions based on validation error
-                                updated_instructions = asyncio.run(
-                                    generate_template_modification_instructions(
-                                        st.session_state.template_agent_json,
-                                        st.session_state.template_modification_instructions or "Fix validation errors",
-                                        block_summaries,
-                                        current_instructions=current_instructions
-                                    )
-                                )
-                                
-                                if not updated_instructions:
-                                    st.session_state.error_message = f"Error generating modified agent: {error}\n\nFailed to update instructions for retry."
-                                    st.session_state.agent_json = None
-                                    break
-                                
-                                # Check if the updated instructions are valid (not questions or suggestions)
-                                if isinstance(updated_instructions, dict):
-                                    if updated_instructions.get("type") in ["clarifying_questions", "unachievable_goal", "vague_goal"]:
-                                        st.session_state.error_message = f"Error generating modified agent: {error}\n\nCould not fix validation error automatically."
-                                        st.session_state.agent_json = None
-                                        break
-                                    elif updated_instructions.get("type") == "instructions":
-                                        current_instructions = updated_instructions
-                                        continue  # Retry with updated instructions
-                                
-                                # If we got a string response, try to parse it
-                                current_instructions = updated_instructions
-                                continue  # Retry with updated instructions
-                                
-                            except Exception as update_error:
-                                st.session_state.error_message = f"Error generating modified agent: {error}\n\nError updating instructions: {str(update_error)}"
-                                st.session_state.agent_json = None
-                                break
-                    else:
-                        # Max retries reached
-                        st.session_state.error_message = f"Error generating modified agent after {max_instruction_retries + 1} attempts: {error}"
-                        st.session_state.agent_json = None
-                        break
-                else:
-                    # Success - modified agent generated
-                    st.session_state.agent_json = agent_json
-                    st.session_state.working_agent_json = agent_json
-                    st.session_state.generation_counter += 1
-                    
-                    # Save agent
-                    agent_name = agent_json.get("name", "agent")
-                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', agent_name).strip('_')[:50]
-                    agent_json_path = OUTPUT_DIR / f"{filename}.json"
-                    
-                    try:
-                        with open(agent_json_path, "w", encoding="utf-8") as f:
-                            json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                    except Exception as e:
-                        st.warning(f"⚠️ Warning: Could not save agent file: {e}")
-                    
-                    break  # Success, exit retry loop
-                
-            except Exception as e:
-                st.session_state.error_message = f"Error during generation: {str(e)}"
-                st.session_state.agent_json = None
-                break
-    
-    # Always go to agent_results step, even on failure
-    st.session_state.current_step = "agent_results"
-    st.rerun()
+# Note: generate_modified_agent_from_template function removed - now using direct
+# patch-based updates in handle_template_modification_request()
 
 # =============================================================================
 # MAIN APPLICATION
