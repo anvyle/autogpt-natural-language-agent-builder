@@ -700,44 +700,6 @@ class AgentFixer:
         
         return agent
     
-    async def apply_all_fixes(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Apply all available fixes to the agent.
-        
-        Args:
-            agent: The agent dictionary to fix
-            blocks: List of available blocks with their schemas (optional)
-            
-        Returns:
-            The fixed agent dictionary
-        """
-        self.fixes_applied = []
-        
-        # Apply fixes in order
-        agent = await self.fix_agent_ids(agent)
-        agent = await self.fix_double_curly_braces(agent)
-        agent = await self.fix_storevalue_before_condition(agent)
-        agent = await self.fix_addtolist_blocks(agent)
-        agent = await self.fix_addtodictionary_blocks(agent)
-        agent = await self.fix_code_execution_output(agent)
-        agent = await self.fix_data_sampling_sample_size(agent)
-        
-        # Apply fixes that require blocks information
-        if blocks:
-            agent = await self.fix_ai_model_parameter(agent, blocks)
-            agent = await self.fix_link_static_properties(agent, blocks)
-            agent = await self.fix_data_type_mismatch(agent, blocks)
-        
-        logging.info(f"Applied {len(self.fixes_applied)} fixes to agent")
-        for fix in self.fixes_applied:
-            logging.warning(f"  - {fix}")
-
-        return agent
-    
-    def get_fixes_applied(self) -> List[str]:
-        """Get a list of all fixes that were applied."""
-        return self.fixes_applied.copy()
-    
     async def fix_data_type_mismatch(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Fix data type mismatches by inserting UniversalTypeConverterBlock between incompatible connections.
@@ -885,6 +847,122 @@ class AgentFixer:
             agent["links"] = new_links
         
         return agent
+
+    async def fix_node_x_coordinates(self, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fix node x-coordinates to ensure adjacent nodes (connected via links) 
+        have at least 1000 units difference in their x-coordinates.
+        
+        For each link connecting two nodes, if the x-coordinate difference is 
+        less than or equal to 1000, the sink node's x-coordinate will be adjusted 
+        to be at least 1000 units to the right of the source node.
+        
+        This function iteratively processes all links until no more adjustments
+        are needed, handling cascading adjustments when moving a node affects
+        downstream nodes.
+        
+        Args:
+            agent: The agent dictionary to fix
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        links = agent.get("links", [])
+        
+        # Create a lookup dictionary for nodes by ID
+        node_lookup = {node.get("id"): node for node in nodes}
+        
+        # Initialize metadata and position for all nodes if missing
+        for node in nodes:
+            if "metadata" not in node:
+                node["metadata"] = {}
+            if "position" not in node["metadata"]:
+                node["metadata"]["position"] = {"x": 0, "y": 0}
+        
+        # Iterate until no more adjustments are needed
+        max_iterations = len(nodes)  # Prevent infinite loops
+        iteration = 0
+        
+        while iteration < max_iterations:
+            iteration += 1
+            adjustments_made = False
+            
+            # Check all links and adjust positions as needed
+            for link in links:
+                source_id = link.get("source_id")
+                sink_id = link.get("sink_id")
+                
+                if not source_id or not sink_id:
+                    continue
+                
+                source_node = node_lookup.get(source_id)
+                sink_node = node_lookup.get(sink_id)
+                
+                if not source_node or not sink_node:
+                    continue
+                
+                source_x = source_node["metadata"]["position"].get("x", 0)
+                sink_x = sink_node["metadata"]["position"].get("x", 0)
+                
+                # Calculate the minimum required x for sink node
+                required_x = source_x + 1000
+                
+                # If sink node needs to be moved, adjust it
+                if sink_x < required_x:
+                    old_x = sink_x
+                    sink_node["metadata"]["position"]["x"] = required_x
+                    adjustments_made = True
+                    
+                    self.add_fix_log(
+                        f"Adjusted x-coordinate for node {sink_id}: {old_x} -> {required_x} "
+                        f"(source node {source_id} at x={source_x}, ensuring minimum 1000 unit spacing)"
+                    )
+            
+            # If no adjustments were made in this iteration, we're done
+            if not adjustments_made:
+                break
+        
+        return agent
+
+    async def apply_all_fixes(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Apply all available fixes to the agent.
+        
+        Args:
+            agent: The agent dictionary to fix
+            blocks: List of available blocks with their schemas (optional)
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        self.fixes_applied = []
+        
+        # Apply fixes in order
+        agent = await self.fix_agent_ids(agent)
+        agent = await self.fix_double_curly_braces(agent)
+        agent = await self.fix_storevalue_before_condition(agent)
+        agent = await self.fix_addtolist_blocks(agent)
+        agent = await self.fix_addtodictionary_blocks(agent)
+        agent = await self.fix_code_execution_output(agent)
+        agent = await self.fix_data_sampling_sample_size(agent)
+        agent = await self.fix_node_x_coordinates(agent)
+        
+        # Apply fixes that require blocks information
+        if blocks:
+            agent = await self.fix_ai_model_parameter(agent, blocks)
+            agent = await self.fix_link_static_properties(agent, blocks)
+            agent = await self.fix_data_type_mismatch(agent, blocks)
+        
+        logging.info(f"Applied {len(self.fixes_applied)} fixes to agent")
+        for fix in self.fixes_applied:
+            logging.warning(f"  - {fix}")
+
+        return agent
+    
+    def get_fixes_applied(self) -> List[str]:
+        """Get a list of all fixes that were applied."""
+        return self.fixes_applied.copy()
 
     def clear_fixes_log(self):
         """Clear the list of applied fixes."""
