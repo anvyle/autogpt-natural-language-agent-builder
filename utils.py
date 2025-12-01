@@ -959,7 +959,7 @@ class AgentFixer:
             logging.warning(f"  - {fix}")
 
         return agent
-    
+
     def get_fixes_applied(self) -> List[str]:
         """Get a list of all fixes that were applied."""
         return self.fixes_applied.copy()
@@ -1217,6 +1217,60 @@ class AgentValidator:
         
         return valid
     
+    def validate_prompt_double_curly_braces_spaces(self, agent: Dict[str, Any]) -> bool:
+        """
+        Validate that prompt parameters do not contain spaces in double curly braces.
+        
+        Checks the 'prompt' parameter in input_default of each node and reports errors
+        if values within double curly braces ({{...}}) contain spaces.
+        For example, {{user name}} should be {{user_name}}.
+        
+        Args:
+            agent: The agent dictionary to validate
+            
+        Returns:
+            True if all prompts are valid (no spaces in double curly braces), False otherwise
+        """
+        valid = True
+        nodes = agent.get("nodes", [])
+        
+        for node in nodes:
+            node_id = node.get("id")
+            input_default = node.get("input_default", {})
+            
+            # Check if 'prompt' parameter exists
+            if "prompt" not in input_default:
+                continue
+            
+            prompt_text = input_default["prompt"]
+            
+            # Only process if it's a string
+            if not isinstance(prompt_text, str):
+                continue
+            
+            # Find all double curly brace patterns with spaces
+            # Pattern: {{...}} where ... contains spaces
+            matches = re.finditer(r'\{\{([^}]+)\}\}', prompt_text)
+            
+            for match in matches:
+                content = match.group(1)  # Content inside the braces
+                if " " in content:  # Check if there are spaces
+                    # Find the position in the text for better error reporting
+                    start_pos = match.start()
+                    # Try to find a snippet around the match for context
+                    snippet_start = max(0, start_pos - 30)
+                    snippet_end = min(len(prompt_text), match.end() + 30)
+                    snippet = prompt_text[snippet_start:snippet_end]
+                    
+                    self.add_error(
+                        f"Node '{node_id}' has spaces in double curly braces in prompt parameter: "
+                        f"'{{{{{content}}}}}' should be '{{{{{content.replace(' ', '_')}}}}}'. "
+                        f"Context: ...{snippet}..."
+                    )
+                    valid = False
+        
+        return valid
+    
     def validate(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
         """
         Comprehensive validation of an agent against available blocks.
@@ -1234,7 +1288,8 @@ class AgentValidator:
             ("Link node references", self.validate_link_node_references(agent)),
             ("Required inputs", self.validate_required_inputs(agent, blocks)),
             ("Data type compatibility", self.validate_data_type_compatibility(agent, blocks)),
-            ("Nested sink links", self.validate_nested_sink_links(agent, blocks))
+            ("Nested sink links", self.validate_nested_sink_links(agent, blocks)),
+            ("Prompt double curly braces spaces", self.validate_prompt_double_curly_braces_spaces(agent))
         ]
         
         all_passed = all(check[1] for check in checks)
