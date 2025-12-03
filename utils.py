@@ -851,15 +851,11 @@ class AgentFixer:
     async def fix_node_x_coordinates(self, agent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Fix node x-coordinates to ensure adjacent nodes (connected via links) 
-        have at least 1000 units difference in their x-coordinates.
+        have at least 800 units difference in their x-coordinates.
         
         For each link connecting two nodes, if the x-coordinate difference is 
-        less than or equal to 1000, the sink node's x-coordinate will be adjusted 
-        to be at least 1000 units to the right of the source node.
-        
-        This function iteratively processes all links until no more adjustments
-        are needed, handling cascading adjustments when moving a node affects
-        downstream nodes.
+        less than or equal to 800, the sink node's x-coordinate will be adjusted 
+        to be at least 800 units to the right of the source node.
         
         Args:
             agent: The agent dictionary to fix
@@ -873,55 +869,33 @@ class AgentFixer:
         # Create a lookup dictionary for nodes by ID
         node_lookup = {node.get("id"): node for node in nodes}
         
-        # Initialize metadata and position for all nodes if missing
-        for node in nodes:
-            if "metadata" not in node:
-                node["metadata"] = {}
-            if "position" not in node["metadata"]:
-                node["metadata"]["position"] = {"x": 0, "y": 0}
-        
-        # Iterate until no more adjustments are needed
-        max_iterations = len(nodes)  # Prevent infinite loops
-        iteration = 0
-        
-        while iteration < max_iterations:
-            iteration += 1
-            adjustments_made = False
+        # Iterate through all links and adjust positions as needed
+        for link in links:
+            source_id = link.get("source_id")
+            sink_id = link.get("sink_id")
             
-            # Check all links and adjust positions as needed
-            for link in links:
-                source_id = link.get("source_id")
-                sink_id = link.get("sink_id")
-                
-                if not source_id or not sink_id:
-                    continue
-                
-                source_node = node_lookup.get(source_id)
-                sink_node = node_lookup.get(sink_id)
-                
-                if not source_node or not sink_node:
-                    continue
-                
-                source_x = source_node["metadata"]["position"].get("x", 0)
-                sink_x = sink_node["metadata"]["position"].get("x", 0)
-                
-                # Calculate the minimum required x for sink node
-                required_x = source_x + 1000
-                
-                # If sink node needs to be moved, adjust it
-                if sink_x < required_x:
-                    old_x = sink_x
-                    sink_node["metadata"]["position"]["x"] = required_x
-                    adjustments_made = True
-                    
-                    self.add_fix_log(
-                        f"Adjusted x-coordinate for node {sink_id}: {old_x} -> {required_x} "
-                        f"(source node {source_id} at x={source_x}, ensuring minimum 1000 unit spacing)"
-                    )
+            if not source_id or not sink_id:
+                continue
             
-            # If no adjustments were made in this iteration, we're done
-            if not adjustments_made:
-                break
+            source_node = node_lookup.get(source_id)
+            sink_node = node_lookup.get(sink_id)
+            
+            if not source_node or not sink_node:
+                continue
+            
+            source_x = source_node["metadata"]["position"].get("x", 0)
+            sink_x = sink_node["metadata"]["position"].get("x", 0)
+
+            difference = sink_x - source_x
+            if difference < 800:
+                required_x = source_x + 800
+                sink_node["metadata"]["position"]["x"] = required_x
+                self.add_fix_log(
+                    f"Adjusted x-coordinate for node {sink_id}: {sink_x} -> {required_x} "
+                    f"(source node {source_id} at x={source_x}, ensuring minimum 800 unit spacing)"
+                )
+            else:
+                continue
         
         return agent
 
