@@ -42,6 +42,7 @@ class AgentFixer:
         self.DATA_SAMPLING_BLOCK_ID = "4a448883-71fa-49cf-91cf-70d793bd7d87"
         self.STORE_VALUE_BLOCK_ID = "1ff065e9-88e8-4358-9d82-8dc91f622ba9"
         self.UNIVERSAL_TYPE_CONVERTER_BLOCK_ID = "95d1b990-ce13-4d88-9737-ba5c2070c97b"
+        self.GET_CURRENT_DATE_BLOCK_ID = "b29c1b50-5d0e-4d9f-8f9d-1b0e6fcbf0b1"
         self.fixes_applied = []
     
     def is_uuid(self, value: str) -> bool:
@@ -886,7 +887,7 @@ class AgentFixer:
             source_x = source_node["metadata"]["position"].get("x", 0)
             sink_x = sink_node["metadata"]["position"].get("x", 0)
 
-            difference = sink_x - source_x
+            difference = abs(sink_x - source_x)
             if difference < 800:
                 required_x = source_x + 800
                 sink_node["metadata"]["position"]["x"] = required_x
@@ -896,6 +897,40 @@ class AgentFixer:
                 )
             else:
                 continue
+        
+        return agent
+
+    async def fix_getcurrentdate_offset(self, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fix GetCurrentDateBlock offset to ensure it's a positive value.
+        
+        If the offset in input_default is negative, it will be changed to its
+        absolute value (positive).
+        
+        Args:
+            agent: The agent dictionary to fix
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        
+        for node in nodes:
+            if node.get("block_id") == self.GET_CURRENT_DATE_BLOCK_ID:
+                node_id = node.get("id")
+                input_default = node.get("input_default", {})
+                
+                # Check if offset exists and is negative
+                if "offset" in input_default:
+                    offset_value = input_default["offset"]
+                    
+                    # Check if it's a number and negative
+                    if isinstance(offset_value, (int, float)) and offset_value < 0:
+                        old_offset = offset_value
+                        input_default["offset"] = abs(offset_value)
+                        self.add_fix_log(
+                            f"Fixed GetCurrentDateBlock {node_id} offset: {old_offset} -> {input_default['offset']}"
+                        )
         
         return agent
 
@@ -921,6 +956,7 @@ class AgentFixer:
         agent = await self.fix_code_execution_output(agent)
         agent = await self.fix_data_sampling_sample_size(agent)
         agent = await self.fix_node_x_coordinates(agent)
+        agent = await self.fix_getcurrentdate_offset(agent)
         
         # Apply fixes that require blocks information
         if blocks:
