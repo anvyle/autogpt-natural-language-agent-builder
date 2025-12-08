@@ -112,6 +112,11 @@ IMPORTANT CLARIFICATIONS POLICY:
 - If there is enough information to infer reasonable defaults, prefer to propose defaults rather than asking extra questions.
 - If the goal still lacks critical design-time details after this, ask the user for those specific missing pieces before generating the step-by-step workflow.
 
+**WHEN GENERATING CLARIFYING QUESTIONS:**
+- Include a helpful note in each question that tells users they can respond with "agent input" or "runtime input" if this value should come from the end-user
+- Frame questions to distinguish between design-time config (fixed settings) and runtime values (per-run inputs)
+- Example: "What email address should receive the report? (You can respond 'agent input' if this should be provided by the user each time the agent runs)"
+
 ---
 
 📝 **GUIDELINES:**
@@ -207,14 +212,14 @@ You must respond with valid JSON in one of these four formats:
   "type": "clarifying_questions",
   "questions": [
     {{
-      "question": "What is the URL of the YouTube video you want to summarize?",
+      "question": "What is the URL of the YouTube video you want to summarize? (You can respond 'agent input' if this should be provided by the user each time the agent runs)",
       "keyword": "youtube_url",
-      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ or 'agent input'"
     }},
     {{
-      "question": "What is the length of the video?",
-      "keyword": "video_length", 
-      "example": "2 minutes"
+      "question": "Which email provider should be used for sending notifications? (Gmail, Outlook, or custom SMTP)",
+      "keyword": "email_provider",
+      "example": "Gmail"
     }}
   ]
 }}
@@ -275,19 +280,19 @@ You must respond with valid JSON in one of these four formats:
   "type": "clarifying_questions",
   "questions": [
     {{
-      "question": "What is the URL of the YouTube video you want to summarize?",
+      "question": "What is the URL of the YouTube video you want to summarize? (You can respond 'agent input' if this should be provided by the user each time the agent runs)",
       "keyword": "youtube_url",
-      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ or 'agent input'"
     }},
     {{
-      "question": "What is the length of the video?",
-      "keyword": "video_length",
-      "example": "2 minutes"
+      "question": "How long should the summary be? (You can respond 'agent input' if this should be configurable per run)",
+      "keyword": "summary_length",
+      "example": "5 bullet points or 'agent input'"
     }},
     {{
-      "question": "What is the topic of the video?",
-      "keyword": "video_topic",
-      "example": "Rick Astley - Never Gonna Give You Up"
+      "question": "What output format do you prefer for the summary?",
+      "keyword": "output_format",
+      "example": "bullet points, paragraph, or structured JSON"
     }}
   ]
 }}
@@ -457,6 +462,11 @@ Perform a comprehensive analysis and produce an expert-level workflow that mirro
 - Do not ask for information that the user can provide at runtime via input blocks.
 - Do not ask for API keys or credentials; the platform handles credentials directly.
 
+**WHEN GENERATING CLARIFYING QUESTIONS:**
+- Include a helpful note in each question that tells users they can respond with "agent input" or "runtime input" if this value should come from the end-user
+- Frame questions to distinguish between design-time config (fixed settings) and runtime values (per-run inputs)
+- Example: "What email address should be added? (You can respond 'agent input' if this should be provided by the user each time the agent runs)"
+
 If the improvement request lacks sufficient detail, ask the user to provide more specific information before proceeding with the updated instructions.
 
 ---
@@ -609,9 +619,9 @@ You must respond with valid JSON in one of these four formats:
       "example": "email failures, network timeouts, data validation errors"
     }},
     {{
-      "question": "What should happen when an error occurs?",
-      "keyword": "error_action",
-      "example": "retry, log, notify user, skip step"
+      "question": "Who should be notified when an error occurs? (You can respond 'agent input' if this should be provided by the user each time the agent runs)",
+      "keyword": "error_notification_email",
+      "example": "admin@company.com or 'agent input'"
     }}
   ]
 }}
@@ -1031,6 +1041,11 @@ Patch generation is a **surgical update** to specific parts of an existing agent
 - Minor details where reasonable defaults exist
 - Information already visible in the current agent
 
+**WHEN GENERATING CLARIFYING QUESTIONS:**
+- Include a helpful note in each question that tells users they can respond with "agent input" or "runtime input" if this value should come from the end-user
+- Frame questions to distinguish between design-time config (fixed settings) and runtime values (per-run inputs)
+- Example: "What value should be used? (You can respond 'agent input' if this should be provided by the user each time the agent runs)"
+
 **Format (use only when necessary):**
 ```json
 {{
@@ -1040,6 +1055,11 @@ Patch generation is a **surgical update** to specific parts of an existing agent
       "question": "Which block needs this modification?",
       "keyword": "target_block",
       "example": "SendEmailBlock, APICallBlock, or both?"
+    }},
+    {{
+      "question": "What value should be used for the new field? (You can respond 'agent input' if this should be provided by the user each time the agent runs)",
+      "keyword": "field_value",
+      "example": "A specific value or 'agent input'"
     }}
   ]
 }}
@@ -1238,6 +1258,11 @@ You must respond with **ONE** of the following JSON formats:
       "question": "Which specific block needs to be modified?",
       "keyword": "target_block",
       "example": "SendEmailBlock, APICallBlock, etc."
+    }},
+    {{
+      "question": "What email address should receive notifications? (You can respond 'agent input' if this should be provided by the user each time the agent runs)",
+      "keyword": "notification_email",
+      "example": "admin@company.com or 'agent input'"
     }}
   ]
 }}
@@ -1392,7 +1417,6 @@ def get_agent_generation_prompt(used_blocks: list, example: str) -> str:
         example=example
     )
 
-
 def get_incremental_update_system_prompt(block_summaries: list) -> str:
     """Get the incremental update system prompt with block summaries."""
     return INCREMENTAL_UPDATE_SYSTEM_PROMPT_TEMPLATE.format(
@@ -1440,6 +1464,7 @@ def get_patch_generation_human_prompt(agent_summary: dict, current_agent: dict, 
         update_request=update_request
     )
 
+
 async def get_block_summaries():
     blocks = await load_json_async(BLOCK_FILE)
     summaries = [
@@ -1453,6 +1478,7 @@ async def get_block_summaries():
         } for block in blocks
     ]
     return summaries, blocks
+
 
 async def decompose_description(description, block_summaries, original_text=None, user_instruction=None, retry_feedback=None):
     """
@@ -1574,14 +1600,16 @@ async def decompose_description(description, block_summaries, original_text=None
     except Exception as e:
         logging.error(f"❌ Error decomposing description: {e}")
         return None
-    
-async def generate_agent_json_from_subtasks(instructions, blocks_json):
+
+
+async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retries=2):
     """
-    Generate agent JSON from instructions (single attempt, no retry logic).
+    Generate agent JSON from instructions with retry logic for parsing failures.
     
     Args:
         instructions: Step-by-step instructions (dict or string)
         blocks_json: Available blocks data
+        max_retries: Maximum number of retries for JSON parsing failures (default: 2)
     
     Returns:
         Tuple of (agent_json, error_message)
@@ -1628,40 +1656,63 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json):
         else:
             instructions_content = str(instructions)
 
-        messages = [
-            SystemMessage(content=prompt),
-            HumanMessage(content=instructions_content)
-        ]
-
-        response = await llm.ainvoke(messages)
-        if response is None:
-            logging.error("❌ No response received from LLM")
-            return None, "No response received from LLM"
+        # Retry loop for JSON parsing failures
+        for retry_count in range(max_retries + 1):
+            if retry_count > 0:
+                logging.info(f"🔄 Retry attempt {retry_count}/{max_retries} for agent generation")
             
-        agent_json = _parse_llm_json_or_none(str(response.text))
-        if agent_json is None:
-            logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
-            return None, "Failed to parse JSON from LLM response"
-
-        agent_fixer = AgentFixer()
-        agent_json = await agent_fixer.apply_all_fixes(agent_json, blocks_json)
-
-        validator = AgentValidator()
-        is_valid, error = validator.validate(agent_json, blocks_json)
-        if not is_valid:
-            return None, error
-
-        # Success - agent generated and validated
-        filename = agent_json["name"].replace(" ", "_")
-        agent_json_path = OUTPUT_DIR / f"{filename}.json"
-        try:
-            with open(agent_json_path, "w", encoding="utf-8") as f:
-                json.dump(agent_json, f, indent=2, ensure_ascii=False)
-            logging.info(f"✅ Saved agent.json to: {agent_json_path}")
-        except Exception as e:
-            logging.error(f"❌ Failed to save agent.json: {e}")
+            messages = [
+                SystemMessage(content=prompt),
+                HumanMessage(content=instructions_content)
+            ]
             
-        return agent_json, None
+            # Add retry context if this is a retry attempt
+            if retry_count > 0:
+                retry_message = """
+**IMPORTANT**: Your previous response could not be parsed as valid JSON. 
+Please ensure your response is ONLY valid JSON with no additional text, no markdown formatting, and no code blocks.
+The JSON must be properly formatted and complete."""
+                messages.append(HumanMessage(content=retry_message))
+
+            response = await llm.ainvoke(messages)
+            if response is None:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ No response received from LLM. Retrying...")
+                    continue
+                logging.error("❌ No response received from LLM")
+                return None, "No response received from LLM"
+                
+            agent_json = _parse_llm_json_or_none(str(response.text))
+            if agent_json is None:
+                if retry_count < max_retries:
+                    logging.warning(f"⚠️ Failed to parse JSON from LLM response. Retrying...")
+                    continue
+                logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
+                return None, "Failed to parse JSON from LLM response"
+            
+            # Successfully parsed JSON, now validate and fix
+            agent_fixer = AgentFixer()
+            agent_json = await agent_fixer.apply_all_fixes(agent_json, blocks_json)
+
+            validator = AgentValidator()
+            is_valid, error = validator.validate(agent_json, blocks_json)
+            if not is_valid:
+                return None, error
+
+            # Success - agent generated and validated
+            filename = agent_json["name"].replace(" ", "_")
+            agent_json_path = OUTPUT_DIR / f"{filename}.json"
+            try:
+                with open(agent_json_path, "w", encoding="utf-8") as f:
+                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
+                logging.info(f"✅ Saved agent.json to: {agent_json_path}")
+            except Exception as e:
+                logging.error(f"❌ Failed to save agent.json: {e}")
+                
+            return agent_json, None
+        
+        # Should not reach here, but just in case
+        return None, f"Failed to generate valid agent JSON after {max_retries + 1} attempts"
         
     except Exception as e:
         logging.error(f"❌ Error during agent generation: {e}")
@@ -1861,6 +1912,7 @@ def _deep_update(target: dict, updates: dict):
             _deep_update(target[key], value)
         else:
             target[key] = value
+
 
 async def update_agent_json_incrementally(update_request: str, current_agent_json: dict, blocks_json: list, max_retries: int = 2):
     """
