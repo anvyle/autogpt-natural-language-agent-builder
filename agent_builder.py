@@ -22,6 +22,16 @@ BLOCK_FILE = "./data/blocks_2025_11_11_edited.json"
 EXAMPLE_FILE = "./data/Resume_Rater_AI.json"
 
 # =============================================================================
+# GLOBAL STATE FOR BLOCKS
+# =============================================================================
+
+# Global variables to store blocks and block summaries
+_blocks = None
+_block_summaries = None
+_blocks_loaded = False
+
+
+# =============================================================================
 # JSON PARSING UTILITIES
 # =============================================================================
 
@@ -160,19 +170,19 @@ AutoGPT's block execution style requires that all properties associated with the
 3. **ConditionBlock:**
     **IMPORTANT**: The `value2` of `ConditionBlock` is reference value and `value1` is contrast value.
 
-4. **AgentFileInputBlock:**
-   **DO NOT USE** - Currently, this block doesn't return the correct file path.
-
-5. **CodeExecutionBlock:**
+4. **CodeExecutionBlock:**
    **DO NOT USE** - It's not working well. Instead, use AI-related blocks to do the same thing.
 
-6. **ReadCsvBlock:**
+5. **ReadCsvBlock:**
    **IMPORTANT**: Do not use the `row` output property of this block. Only use the `rows` output property.
 
-7. **FillTextTemplateBlock:**
+6. **FillTextTemplateBlock:**
    **IMPORTANT**: Do not use any scripting or complex formatting in the `format` property. Use only simple variable names without nested properties.
    ❌ **NOT ALLOWED**: `'%.2f'|format(roi)`, `data.company`, `user.name`
    ✅ **ALLOWED**: `company`, `name`, `roi`
+
+7. **ExaSearchBlock:**
+   **IMPORTANT**: Use the `results` output parameter instead of the `context` parameter when context is needed.
 
 ---
 
@@ -562,19 +572,19 @@ AutoGPT's block execution style requires that all properties associated with the
 3. **ConditionBlock:**
    **IMPORTANT**: The `value2` of `ConditionBlock` is reference value and `value1` is contrast value.
 
-4. **AgentFileInputBlock:**
-   **DO NOT USE** - Currently, this block doesn't return the correct file path.
-
-5. **CodeExecutionBlock:**
+4. **CodeExecutionBlock:**
    **DO NOT USE** - It's not working well. Instead, use AI-related blocks to do the same thing.
 
-6. **ReadCsvBlock:**
+5. **ReadCsvBlock:**
    **IMPORTANT**: Do not use the `row` output property of this block. Only use the `rows` output property.
 
-7. **FillTextTemplateBlock:**
+6. **FillTextTemplateBlock:**
    **IMPORTANT**: Do not use any scripting or complex formatting in the `format` property. Use only simple variable names without nested properties.
    ❌ **NOT ALLOWED**: `'%.2f'|format(roi)`, `data.company`, `user.name`
    ✅ **ALLOWED**: `company`, `name`, `roi`
+
+7. **ExaSearchBlock:**
+   **IMPORTANT**: Use the `results` output parameter instead of the `context` parameter when context is needed.
 
 ---
 
@@ -1465,28 +1475,54 @@ def get_patch_generation_human_prompt(agent_summary: dict, current_agent: dict, 
     )
 
 
-async def get_block_summaries():
-    blocks = await load_json_async(BLOCK_FILE)
-    summaries = [
-        {
-            "id": block["id"],
-            "name": block["name"],
-            "description": block.get("description", ""),
-            "inputs_schema": block.get("inputSchema", {}),
-            "outputs_schema": block.get("outputSchema", {}),
+async def initialize_blocks():
+    """
+    Initialize blocks and block summaries by loading from file.
+    This should be called once at application startup.
+    """
+    global _blocks, _block_summaries, _blocks_loaded
+    
+    if _blocks_loaded:
+        logging.info("Blocks already loaded, skipping initialization")
+        return
+    
+    try:
+        logging.info(f"Loading blocks from {BLOCK_FILE}...")
+        _blocks = await load_json_async(BLOCK_FILE)
+        _block_summaries = [
+            {
+                "id": block["id"],
+                "name": block["name"],
+                "description": block.get("description", ""),
+                "inputs_schema": block.get("inputSchema", {}),
+                "outputs_schema": block.get("outputSchema", {}),
+            } for block in _blocks
+        ]
+        _blocks_loaded = True
+        logging.info(f"✅ Successfully loaded {len(_blocks)} blocks")
+    except Exception as e:
+        logging.error(f"❌ Failed to load blocks: {e}")
+        raise
 
-        } for block in blocks
-    ]
-    return summaries, blocks
+def get_blocks():
+    """Get the loaded blocks. Returns None if blocks haven't been initialized."""
+    return _blocks
+
+def get_block_summaries():
+    """Get the loaded block summaries. Returns None if blocks haven't been initialized."""
+    return _block_summaries
+
+def is_blocks_loaded():
+    """Check if blocks have been loaded."""
+    return _blocks_loaded
 
 
-async def decompose_description(description, block_summaries, original_text=None, user_instruction=None, retry_feedback=None):
+async def decompose_description(description, original_text=None, user_instruction=None, retry_feedback=None):
     """
     Decompose a description into step-by-step instructions.
     
     Args:
         description: The goal or description to decompose
-        block_summaries: Available block summaries
         original_text: Original instructions (for revision scenarios)
         user_instruction: User feedback for revision
         retry_feedback: Validation error feedback for retry scenarios
@@ -1495,6 +1531,12 @@ async def decompose_description(description, block_summaries, original_text=None
         Parsed JSON dict with instructions or None on error
     """
     logging.info(f"Decomposing description: \n{description}\n...")
+    
+    # Ensure blocks are loaded
+    if not _blocks_loaded:
+        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        return None
+    
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 
     if original_text and user_instruction:
@@ -1563,7 +1605,7 @@ async def decompose_description(description, block_summaries, original_text=None
             - Do NOT include any explanatory text, only the JSON instructions.
 
             You can refer to the following available blocks for implementation:
-            {json.dumps(block_summaries, indent=2)}
+            {json.dumps(_block_summaries, indent=2)}
         """
         try:
             response = await llm.ainvoke([HumanMessage(content=prompt)])
@@ -1580,7 +1622,7 @@ async def decompose_description(description, block_summaries, original_text=None
             logging.error(f"❌ Error revising instructions: {e}")
             return None
 
-    prompt = get_decomposition_prompt(block_summaries)
+    prompt = get_decomposition_prompt(_block_summaries)
     
     try:
         response = await llm.ainvoke([
@@ -1602,13 +1644,12 @@ async def decompose_description(description, block_summaries, original_text=None
         return None
 
 
-async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retries=2):
+async def generate_agent_json_from_subtasks(instructions, max_retries=2):
     """
     Generate agent JSON from instructions with retry logic for parsing failures.
     
     Args:
         instructions: Step-by-step instructions (dict or string)
-        blocks_json: Available blocks data
         max_retries: Maximum number of retries for JSON parsing failures (default: 2)
     
     Returns:
@@ -1616,13 +1657,10 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retri
     """
     logging.info(f"Generating agent JSON from instructions...")
     
-    if isinstance(blocks_json, str):
-        try:
-            blocks = json.loads(blocks_json)
-        except Exception:
-            blocks = []
-    else:
-        blocks = blocks_json
+    # Ensure blocks are loaded
+    if not _blocks_loaded:
+        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        return None, "Blocks not loaded"
 
     # Extract block names from the structured JSON format
     block_names = set()
@@ -1635,13 +1673,13 @@ async def generate_agent_json_from_subtasks(instructions, blocks_json, max_retri
             block_names.add(block_name)
 
     used_blocks = []
-    for block in blocks:
+    for block in _blocks:
         block_name = block.get("name") or block.get("block_name")
         if block_name and block_name in block_names:
             used_blocks.append(block)
 
     if not used_blocks:
-        used_blocks = blocks
+        used_blocks = _blocks
 
     example = await load_json_async(EXAMPLE_FILE)
     example = json.dumps(example, indent=2)
@@ -1692,10 +1730,10 @@ The JSON must be properly formatted and complete."""
             
             # Successfully parsed JSON, now validate and fix
             agent_fixer = AgentFixer()
-            agent_json = await agent_fixer.apply_all_fixes(agent_json, blocks_json)
+            agent_json = await agent_fixer.apply_all_fixes(agent_json, _blocks)
 
             validator = AgentValidator()
-            is_valid, error = validator.validate(agent_json, blocks_json)
+            is_valid, error = validator.validate(agent_json, _blocks)
             if not is_valid:
                 return None, error
 
@@ -1719,7 +1757,7 @@ The JSON must be properly formatted and complete."""
         return None, f"Error during agent generation: {e}"
 
 
-async def generate_agent_patch(update_request: str, current_agent: dict, block_summaries: list, blocks_json: list):
+async def generate_agent_patch(update_request: str, current_agent: dict):
     """
     Generate a minimal JSON patch to update the agent.
     Can also return clarifying questions if more information is needed.
@@ -1727,8 +1765,6 @@ async def generate_agent_patch(update_request: str, current_agent: dict, block_s
     Args:
         update_request: User's natural language update request
         current_agent: Current agent JSON
-        block_summaries: Available block summaries
-        blocks_json: Full block definitions
     
     Returns:
         Tuple of (patch_dict_or_questions, error_message)
@@ -1737,6 +1773,11 @@ async def generate_agent_patch(update_request: str, current_agent: dict, block_s
         - {"intent": {...}, "patches": [...]} for actual patches
     """
     logging.info(f"Generating agent patch for request: {update_request}")
+    
+    # Ensure blocks are loaded
+    if not _blocks_loaded:
+        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        return None, "Blocks not loaded"
     
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
     
@@ -1757,7 +1798,7 @@ async def generate_agent_patch(update_request: str, current_agent: dict, block_s
         })
     
     # Use getter functions for prompts
-    system_prompt = get_patch_generation_system_prompt(block_summaries)
+    system_prompt = get_patch_generation_system_prompt(_block_summaries)
     human_prompt = get_patch_generation_human_prompt(agent_summary, current_agent, update_request)
     
     try:
@@ -1914,7 +1955,7 @@ def _deep_update(target: dict, updates: dict):
             target[key] = value
 
 
-async def update_agent_json_incrementally(update_request: str, current_agent_json: dict, blocks_json: list, max_retries: int = 2):
+async def update_agent_json_incrementally(update_request: str, current_agent_json: dict, max_retries: int = 2):
     """
     Update agent JSON using patch-based incremental updates.
     This preserves unchanged parts exactly and only modifies what's necessary.
@@ -1923,7 +1964,6 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
     Args:
         update_request: User's natural language update request (e.g., "Add error handling to step 3")
         current_agent_json: Current agent JSON to update
-        blocks_json: Available blocks data
         max_retries: Maximum number of retries if validation fails (default: 2)
     
     Returns:
@@ -1935,17 +1975,12 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
     """
     logging.info(f"Updating agent incrementally with request: {update_request}")
     
+    # Ensure blocks are loaded
+    if not _blocks_loaded:
+        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        return None, "Blocks not loaded"
+    
     try:
-        # Get block summaries for context
-        block_summaries = [
-            {
-                "id": block["id"],
-                "name": block["name"],
-                "description": block.get("description", ""),
-                "inputs_schema": block.get("inputSchema", {}),
-                "outputs_schema": block.get("outputSchema", {})
-            } for block in blocks_json
-        ]
         
         # Retry loop for patch generation and application
         for retry_count in range(max_retries + 1):
@@ -1955,9 +1990,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             # Step 1: Generate the patch (may return clarifying questions)
             result, error = await generate_agent_patch(
                 update_request,
-                current_agent_json,
-                block_summaries,
-                blocks_json
+                current_agent_json
             )
             
             if error:
@@ -1996,7 +2029,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             
             # Step 3: Fix any issues
             agent_fixer = AgentFixer()
-            updated_agent = await agent_fixer.apply_all_fixes(updated_agent, blocks_json)
+            updated_agent = await agent_fixer.apply_all_fixes(updated_agent, _blocks)
             
             fixes_applied = agent_fixer.get_fixes_applied()
             if fixes_applied:
@@ -2004,7 +2037,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             
             # Step 4: Validate the result
             validator = AgentValidator()
-            is_valid, validation_error = validator.validate(updated_agent, blocks_json)
+            is_valid, validation_error = validator.validate(updated_agent, _blocks)
             
             if not is_valid:
                 if retry_count < max_retries:

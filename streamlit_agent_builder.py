@@ -20,7 +20,10 @@ import config
 
 from agent_builder import (
     decompose_description, 
-    get_block_summaries, 
+    initialize_blocks,
+    get_blocks,
+    get_block_summaries,
+    is_blocks_loaded,
     generate_agent_json_from_subtasks,
     update_agent_json_incrementally,
 )
@@ -105,14 +108,14 @@ initialize_session_state()
 # =============================================================================
 
 @st.cache_data
-def load_blocks() -> Tuple[Optional[List], Optional[Dict]]:
-    """Load and cache block summaries and blocks."""
+def load_blocks() -> bool:
+    """Load and cache blocks. Returns True if successful, False otherwise."""
     try:
-        block_summaries, blocks = asyncio.run(get_block_summaries())
-        return block_summaries, blocks
+        asyncio.run(initialize_blocks())
+        return True
     except Exception as e:
         st.error(f"Failed to load blocks: {e}")
-        return None, None
+        return False
 
 def add_message(content: str, is_user: bool = False, message_type: str = "text"):
     """Add a message to the chat history."""
@@ -975,8 +978,7 @@ def handle_template_modification_request(modification_request: str):
             result, error = asyncio.run(
                 update_agent_json_incrementally(
                     modification_request,
-                    st.session_state.template_agent_json,
-                    blocks
+                    st.session_state.template_agent_json
                 )
             )
             
@@ -1045,7 +1047,7 @@ def proceed_to_decomposition():
     
     with st.spinner("Generating step-by-step instructions..."):
         try:
-            decomposition = asyncio.run(decompose_description(goal_to_use, block_summaries))
+            decomposition = asyncio.run(decompose_description(goal_to_use))
             
             if isinstance(decomposition, dict) and decomposition.get("type") == "clarifying_questions":
                 st.session_state.clarifying_questions = decomposition
@@ -1216,8 +1218,7 @@ def generate_agent():
             try:
                 agent_json, error = asyncio.run(
                     generate_agent_json_from_subtasks(
-                        current_instructions,
-                        blocks
+                        current_instructions
                     )
                 )
                 
@@ -1233,7 +1234,6 @@ def generate_agent():
                                 updated_instructions = asyncio.run(
                                     decompose_description(
                                         st.session_state.goal,
-                                        block_summaries,
                                         original_text=current_instructions,
                                         retry_feedback=error
                                     )
@@ -1310,8 +1310,7 @@ def handle_improvement_request(improvement_request: str):
             result, error = asyncio.run(
                 update_agent_json_incrementally(
                     improvement_request,
-                    st.session_state.working_agent_json,
-                    blocks
+                    st.session_state.working_agent_json
                 )
             )
             
@@ -1454,8 +1453,7 @@ def process_enhanced_improvement_request(enhanced_request: str):
             result, error = asyncio.run(
                 update_agent_json_incrementally(
                     enhanced_request,
-                    st.session_state.working_agent_json,
-                    blocks
+                    st.session_state.working_agent_json
                 )
             )
             
@@ -1517,8 +1515,7 @@ def process_enhanced_template_modification_request(enhanced_request: str):
             result, error = asyncio.run(
                 update_agent_json_incrementally(
                     enhanced_request,
-                    st.session_state.template_agent_json,
-                    blocks
+                    st.session_state.template_agent_json
                 )
             )
             
@@ -1580,10 +1577,8 @@ def process_enhanced_template_modification_request(enhanced_request: str):
 
 def main():
     """Main application function."""
-    global block_summaries, blocks
-    block_summaries, blocks = load_blocks()
-    
-    if block_summaries is None:
+    # Initialize blocks
+    if not load_blocks():
         st.error("❌ Failed to load blocks. Please check your configuration.")
         st.stop()
     
