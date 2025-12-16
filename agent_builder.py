@@ -1644,13 +1644,13 @@ async def decompose_description(description, original_text=None, user_instructio
         return None
 
 
-async def generate_agent_json_from_subtasks(instructions, max_retries=2):
+async def generate_agent_json_from_subtasks(instructions):
     """
-    Generate agent JSON from instructions with retry logic for parsing failures.
+    Generate agent JSON from instructions with single retry for parsing failures
+    and single retry for validation failures using patch-based updates.
     
     Args:
         instructions: Step-by-step instructions (dict or string)
-        max_retries: Maximum number of retries for JSON parsing failures (default: 2)
     
     Returns:
         Tuple of (agent_json, error_message)
@@ -1694,63 +1694,87 @@ async def generate_agent_json_from_subtasks(instructions, max_retries=2):
         else:
             instructions_content = str(instructions)
 
-        # Retry loop for JSON parsing failures
-        for retry_count in range(max_retries + 1):
-            if retry_count > 0:
-                logging.info(f"🔄 Retry attempt {retry_count}/{max_retries} for agent generation")
-            
-            messages = [
-                SystemMessage(content=prompt),
-                HumanMessage(content=instructions_content)
-            ]
-            
-            # Add retry context if this is a retry attempt
-            if retry_count > 0:
-                retry_message = """
-**IMPORTANT**: Your previous response could not be parsed as valid JSON. 
-Please ensure your response is ONLY valid JSON with no additional text, no markdown formatting, and no code blocks.
-The JSON must be properly formatted and complete."""
-                messages.append(HumanMessage(content=retry_message))
-
-            response = await llm.ainvoke(messages)
-            if response is None:
-                if retry_count < max_retries:
-                    logging.warning(f"⚠️ No response received from LLM. Retrying...")
-                    continue
-                logging.error("❌ No response received from LLM")
-                return None, "No response received from LLM"
+        # Retry once for JSON parsing failures (2 total attempts)
+        agent_json = None
+        messages = [
+            SystemMessage(content=prompt),
+            HumanMessage(content=instructions_content)
+        ]
+        
+        response = await llm.ainvoke(messages)
+        if response is None:
+            logging.error("❌ No response received from LLM")
+            return None, "No response received from LLM"
                 
-            agent_json = _parse_llm_json_or_none(str(response.text))
-            if agent_json is None:
-                if retry_count < max_retries:
-                    logging.warning(f"⚠️ Failed to parse JSON from LLM response. Retrying...")
-                    continue
-                logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
-                return None, "Failed to parse JSON from LLM response"
-            
-            # Successfully parsed JSON, now validate and fix
-            agent_fixer = AgentFixer()
-            agent_json = await agent_fixer.apply_all_fixes(agent_json, _blocks)
+        agent_json = _parse_llm_json_or_none(str(response.text))  
+        if agent_json is None:
+            logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
+            return None, "Failed to parse JSON from LLM response"
+        
+        # Apply automatic fixes
+        agent_fixer = AgentFixer()
+        agent_json = await agent_fixer.apply_all_fixes(agent_json, _blocks)
 
-            validator = AgentValidator()
-            is_valid, error = validator.validate(agent_json, _blocks)
+        # Validate and use patch-based retry for validation failures (single retry)
+        validator = AgentValidator()
+        is_valid, error = validator.validate(agent_json, _blocks)
+        
+        if not is_valid:
+            logging.warning(f"⚠️ Initial validation failed: {error}")
+            logging.info("🔧 Attempting patch-based fix for validation errors...")
+            
+            # Generate patch to fix validation errors
+            patch_request = f"""Fix the following validation errors in the agent:
+
+            **Validation Error:**
+            {error}
+
+            **Instructions:**
+            Please generate a minimal patch to fix only these validation errors while preserving all other parts of the agent exactly as they are."""
+            
+            patch_result, patch_error = await generate_agent_patch(patch_request, agent_json)
+            
+            if not patch_error and patch_result:
+                # Check if it's clarifying questions (shouldn't happen, but handle it)
+                if not (isinstance(patch_result, dict) and patch_result.get("type") == "clarifying_questions"):
+                    # Apply the patch
+                    fixed_agent, apply_error = apply_agent_patch(agent_json, patch_result)
+                    
+                    if not apply_error and fixed_agent:
+                        # Apply automatic fixes again after patching
+                        fixed_agent = await agent_fixer.apply_all_fixes(fixed_agent, _blocks)
+                        
+                        # Validate the fixed agent
+                        is_valid, error = validator.validate(fixed_agent, _blocks)
+                        
+                        if is_valid:
+                            logging.info("✅ Validation errors fixed with patch-based approach!")
+                            agent_json = fixed_agent
+                        else:
+                            logging.warning(f"⚠️ Validation still failing after patch: {error}")
+                    else:
+                        logging.warning(f"⚠️ Failed to apply fix patch: {apply_error}")
+                else:
+                    logging.warning("⚠️ Patch generation returned clarifying questions - cannot auto-fix")
+            else:
+                logging.warning(f"⚠️ Failed to generate fix patch: {patch_error}")
+            
+            # Final validation check
             if not is_valid:
+                logging.error(f"❌ Validation failed after patch-based fix attempt: {error}")
                 return None, error
 
-            # Success - agent generated and validated
-            filename = agent_json["name"].replace(" ", "_")
-            agent_json_path = OUTPUT_DIR / f"{filename}.json"
-            try:
-                with open(agent_json_path, "w", encoding="utf-8") as f:
-                    json.dump(agent_json, f, indent=2, ensure_ascii=False)
-                logging.info(f"✅ Saved agent.json to: {agent_json_path}")
-            except Exception as e:
-                logging.error(f"❌ Failed to save agent.json: {e}")
-                
-            return agent_json, None
-        
-        # Should not reach here, but just in case
-        return None, f"Failed to generate valid agent JSON after {max_retries + 1} attempts"
+        # Success - agent generated and validated
+        filename = agent_json["name"].replace(" ", "_")
+        agent_json_path = OUTPUT_DIR / f"{filename}.json"
+        try:
+            with open(agent_json_path, "w", encoding="utf-8") as f:
+                json.dump(agent_json, f, indent=2, ensure_ascii=False)
+            logging.info(f"✅ Saved agent.json to: {agent_json_path}")
+        except Exception as e:
+            logging.error(f"❌ Failed to save agent.json: {e}")
+            
+        return agent_json, None
         
     except Exception as e:
         logging.error(f"❌ Error during agent generation: {e}")
@@ -1955,16 +1979,15 @@ def _deep_update(target: dict, updates: dict):
             target[key] = value
 
 
-async def update_agent_json_incrementally(update_request: str, current_agent_json: dict, max_retries: int = 2):
+async def update_agent_json_incrementally(update_request: str, current_agent_json: dict):
     """
     Update agent JSON using patch-based incremental updates.
     This preserves unchanged parts exactly and only modifies what's necessary.
-    Supports clarifying questions, validation, fixing, and retry logic.
+    Supports clarifying questions, validation, fixing, and single retry on failure.
     
     Args:
         update_request: User's natural language update request (e.g., "Add error handling to step 3")
         current_agent_json: Current agent JSON to update
-        max_retries: Maximum number of retries if validation fails (default: 2)
     
     Returns:
         Tuple of (result, error_message)
@@ -1982,10 +2005,10 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
     
     try:
         
-        # Retry loop for patch generation and application
-        for retry_count in range(max_retries + 1):
-            if retry_count > 0:
-                logging.info(f"🔄 Retry attempt {retry_count}/{max_retries}")
+        # Retry once for patch generation and application (2 total attempts)
+        for attempt in range(2):
+            if attempt > 0:
+                logging.info(f"🔄 Retry attempt for agent update")
             
             # Step 1: Generate the patch (may return clarifying questions)
             result, error = await generate_agent_patch(
@@ -1994,13 +2017,13 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             )
             
             if error:
-                if retry_count < max_retries:
+                if attempt < 1:
                     logging.warning(f"⚠️ Patch generation failed: {error}. Retrying...")
                     continue
                 return None, error
             
             if not result:
-                if retry_count < max_retries:
+                if attempt < 1:
                     logging.warning(f"⚠️ No patch generated. Retrying...")
                     continue
                 return None, "Failed to generate patch"
@@ -2015,14 +2038,14 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             updated_agent, error = apply_agent_patch(current_agent_json, result)
             
             if error:
-                if retry_count < max_retries:
+                if attempt < 1:
                     logging.warning(f"⚠️ Patch application failed: {error}. Retrying...")
                     update_request = f"{update_request}\n\nPrevious attempt failed with error: {error}\nPlease fix this issue."
                     continue
                 return None, error
             
             if not updated_agent:
-                if retry_count < max_retries:
+                if attempt < 1:
                     logging.warning(f"⚠️ Patch application returned no agent. Retrying...")
                     continue
                 return None, "Failed to apply patch"
@@ -2040,7 +2063,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             is_valid, validation_error = validator.validate(updated_agent, _blocks)
             
             if not is_valid:
-                if retry_count < max_retries:
+                if attempt < 1:
                     logging.warning(f"⚠️ Validation failed: {validation_error}. Retrying with feedback...")
                     # Enhance update request with validation feedback for next retry
                     update_request = f"{update_request}\n\n**Validation Error from Previous Attempt:**\n{validation_error}\n\nPlease generate a patch that addresses these validation errors."
@@ -2052,7 +2075,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             return updated_agent, None
         
         # Should not reach here, but just in case
-        return None, f"Failed to update agent after {max_retries + 1} attempts"
+        return None, "Failed to update agent after 2 attempts"
         
     except Exception as e:
         logging.error(f"❌ Error during patch-based agent update: {e}")
