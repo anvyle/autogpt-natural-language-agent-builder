@@ -150,7 +150,7 @@ IMPORTANT CLARIFICATIONS POLICY:
    ✅ Good: Input: `name`: "Status" from the second `SendEmailBlock`.)
 7. **AI-RELATED BLOCKS PROMPTS**: Write expert-level prompts that generate clear, natural, human-quality responses.
 8. **MULTIPLE EXECUTIONS BLOCKS**: The non-iterative input of multiple executions blocks should be stored in `StoreValueBlock` and used in the next step.
-9. **INPUT BLOCKS**: Provide a realistic example as the default value so users can better understand the expected input format.
+9. **INPUT BLOCKS**: For input blocks (like `AgentShortTextInputBlock`, `AgentLongTextInputBlock`, etc.), provide a realistic example in the `value` field of `input_default` so users can better understand the expected input format. **IMPORTANT**: Set `input_default.value` to the example value, NOT `input_default.placeholder`. The `placeholder` field should remain empty or contain placeholder text like "Enter your value here", not actual example values.
 10. **TEXT CLEANUP BEFORE USER OUTPUT**: Before any user-facing output (e.g., email via `SendEmailBlock`, Discord via `SendDiscordMessageBlock`, Slack, etc.), insert a `TextReplaceBlock` to sanitize text. At minimum, replace quotation marks (`&#39;` and `&#34;`) with single quotes (`'`) and double quotes (`"`) in all outgoing text fields (such as email subject/body or message content).
 
 🔁 **ITERATIVE WORKFLOW DESIGN:**
@@ -437,6 +437,7 @@ Wrap all nodes and links into a single object:
 - Avoid dangling links.
 - Input and output pins must match block schemas.
 - Do not invent unknown `block_id`s.
+- **For input blocks (AgentShortTextInputBlock, AgentLongTextInputBlock, etc.)**: Set example values in `input_default.value`, NOT in `input_default.placeholder`.
 
 ---
 
@@ -552,7 +553,7 @@ If the improvement request lacks sufficient detail, ask the user to provide more
    ✅ Good: Input: `name`: "Status" from the second `SendEmailBlock`.)
 7. **AI-RELATED BLOCKS PROMPTS**: Write expert-level prompts that generate clear, natural, human-quality responses.
 8. **MULTIPLE EXECUTIONS BLOCKS**: The non-iterative input of multiple executions blocks should be stored in `StoreValueBlock` and used in the next step.
-9. **INPUT BLOCKS**: Provide a realistic example as the default value so users can better understand the expected input format.
+9. **INPUT BLOCKS**: For input blocks (like `AgentShortTextInputBlock`, `AgentLongTextInputBlock`, etc.), provide a realistic example in the `value` field of `input_default` so users can better understand the expected input format. **IMPORTANT**: Set `input_default.value` to the example value, NOT `input_default.placeholder`. The `placeholder` field should remain empty or contain placeholder text like "Enter your value here", not actual example values.
 10. **TEXT CLEANUP BEFORE USER OUTPUT**: Before any user-facing output (e.g., email via `SendEmailBlock`, Discord via `SendDiscordMessageBlock`, Slack, etc.), insert a `TextReplaceBlock` to sanitize text. At minimum, replace quotation marks (`&#39;` and `&#34;`) with single quotes (`'`) and double quotes (`"`) in all outgoing text fields (such as email subject/body or message content).
 
 🔁 **ITERATIVE WORKFLOW DESIGN:**
@@ -916,6 +917,7 @@ Wrap all nodes and links into a single object:
 - Avoid dangling links.
 - Input and output pins must match block schemas.
 - Do not invent unknown `block_id`s.
+- **For input blocks (AgentShortTextInputBlock, AgentLongTextInputBlock, etc.)**: Set example values in `input_default.value`, NOT in `input_default.placeholder`.
 
 ---
 
@@ -1335,6 +1337,9 @@ You must respond with **ONE** of the following JSON formats:
 
 9. **No Dangling Links**:  
    - All link references must exist post-edit. Remove/update links if node is deleted.
+
+10. **Input Blocks**:  
+   - For input blocks (AgentShortTextInputBlock, AgentLongTextInputBlock, etc.), set example values in `input_default.value`, NOT in `input_default.placeholder`.
 
 ### REMINDERS
 
