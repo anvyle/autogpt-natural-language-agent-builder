@@ -179,11 +179,9 @@ cython_debug/
 # Files
 .vscode
 .DS_Store
-AutoGPT/
-backend/
-chroma_db/
-examples/
 generated_agents/
-data-utils/
-sample.csv
 test/
+
+# Blocks cache (dynamically fetched from API)
+data/blocks_cache.json
+data/blocks_cache_metadata.json

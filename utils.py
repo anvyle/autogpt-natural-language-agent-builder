@@ -1281,6 +1281,91 @@ class AgentValidator:
         
         return valid
     
+    def validate_source_output_existence(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> bool:
+        """
+        Validate that all source_names in links exist in the corresponding block's output schema.
+        
+        Checks that for each link, the source_name field references a valid output property
+        in the source block's outputSchema. Also handles nested outputs with _#_ notation.
+        
+        Args:
+            agent: The agent dictionary to validate
+            blocks: List of available blocks with their schemas
+            
+        Returns:
+            True if all source output fields exist, False otherwise
+        """
+        valid = True
+        
+        # Create lookup dictionaries for efficiency
+        block_output_schemas = {
+            block["id"]: block.get("outputSchema", {}).get("properties", {})
+            for block in blocks
+        }
+        block_names = {
+            block["id"]: block.get("name", "Unknown Block")
+            for block in blocks
+        }
+        
+        for link in agent.get("links", []):
+            source_id = link.get("source_id")
+            source_name = link.get("source_name")
+            link_id = link.get("id", "Unknown")
+            
+            # Find the source node
+            source_node = next((node for node in agent.get("nodes", []) if node.get("id") == source_id), None)
+            if not source_node:
+                # This error is already caught by validate_link_node_references
+                continue
+            
+            block_id = source_node.get("block_id")
+            output_props = block_output_schemas.get(block_id, {})
+            block_name = block_names.get(block_id, "Unknown Block")
+            
+            # Handle nested source names (with _#_ notation)
+            if "_#_" in source_name:
+                parent, child = source_name.split("_#_", 1)
+                
+                parent_schema = output_props.get(parent)
+                if not parent_schema:
+                    self.add_error(
+                        f"Invalid source output field '{source_name}' in link '{link_id}' from node '{source_id}' "
+                        f"(block '{block_name}' - {block_id}): "
+                        f"Parent property '{parent}' does not exist in the block's output schema."
+                    )
+                    valid = False
+                    continue
+                
+                # Check if child property exists (if not additionalProperties)
+                if not parent_schema.get("additionalProperties"):
+                    if not (
+                        isinstance(parent_schema, dict)
+                        and "properties" in parent_schema
+                        and isinstance(parent_schema["properties"], dict)
+                        and child in parent_schema["properties"]
+                    ):
+                        available_props = list(parent_schema.get("properties", {}).keys()) if isinstance(parent_schema, dict) else []
+                        self.add_error(
+                            f"Invalid nested source output field '{source_name}' in link '{link_id}' from node '{source_id}' "
+                            f"(block '{block_name}' - {block_id}): "
+                            f"Child property '{child}' does not exist in parent '{parent}' output schema. "
+                            f"Available properties: {available_props}"
+                        )
+                        valid = False
+            else:
+                # Check simple (non-nested) source name
+                if source_name not in output_props:
+                    available_outputs = list(output_props.keys())
+                    self.add_error(
+                        f"Invalid source output field '{source_name}' in link '{link_id}' from node '{source_id}' "
+                        f"(block '{block_name}' - {block_id}): "
+                        f"Output property '{source_name}' does not exist in the block's output schema. "
+                        f"Available outputs: {available_outputs}"
+                    )
+                    valid = False
+        
+        return valid
+    
     def validate(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
         """
         Comprehensive validation of an agent against available blocks.
@@ -1299,6 +1384,7 @@ class AgentValidator:
             ("Required inputs", self.validate_required_inputs(agent, blocks)),
             ("Data type compatibility", self.validate_data_type_compatibility(agent, blocks)),
             ("Nested sink links", self.validate_nested_sink_links(agent, blocks)),
+            ("Source output existence", self.validate_source_output_existence(agent, blocks)),
             ("Prompt double curly braces spaces", self.validate_prompt_double_curly_braces_spaces(agent))
         ]
         

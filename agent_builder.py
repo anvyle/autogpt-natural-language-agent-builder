@@ -9,6 +9,8 @@ from utils import load_json_async, AgentFixer, AgentValidator
 
 # Import centralized config for secrets management
 import config
+# Import blocks fetcher for dynamic blocks loading
+from blocks_fetcher import fetch_and_cache_blocks, get_cache_info
 # from validator import validate_agent_json
 
 # Environment is set up automatically by config module
@@ -18,7 +20,8 @@ OUTPUT_DIR = Path(f"generated_agents/{datetime.now().strftime('%Y%m%d')}")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL = "gemini-3-pro-preview"
 
-BLOCK_FILE = "./data/blocks_2025_11_11_edited.json"
+# Legacy block file kept for reference
+# BLOCK_FILE = "./data/blocks_2025_11_11_edited.json"
 EXAMPLE_FILE = "./data/Resume_Rater_AI.json"
 
 # =============================================================================
@@ -1480,20 +1483,29 @@ def get_patch_generation_human_prompt(agent_summary: dict, current_agent: dict, 
     )
 
 
-async def initialize_blocks():
+async def initialize_blocks(force_refresh: bool = False):
     """
-    Initialize blocks and block summaries by loading from file.
+    Initialize blocks and block summaries by fetching from API with caching.
     This should be called once at application startup.
+    
+    Args:
+        force_refresh: If True, bypass cache and fetch fresh blocks from API
     """
     global _blocks, _block_summaries, _blocks_loaded
     
-    if _blocks_loaded:
+    if _blocks_loaded and not force_refresh:
         logging.info("Blocks already loaded, skipping initialization")
         return
     
     try:
-        logging.info(f"Loading blocks from {BLOCK_FILE}...")
-        _blocks = await load_json_async(BLOCK_FILE)
+        # Log cache status
+        cache_info = await get_cache_info()
+        logging.info(f"Cache status: {cache_info.get('status', 'unknown')}")
+        
+        # Fetch blocks (from cache or API)
+        logging.info("Loading blocks...")
+        _blocks = await fetch_and_cache_blocks(force_refresh=force_refresh)
+        
         _block_summaries = [
             {
                 "id": block["id"],
@@ -1505,6 +1517,12 @@ async def initialize_blocks():
         ]
         _blocks_loaded = True
         logging.info(f"✅ Successfully loaded {len(_blocks)} blocks")
+        
+        # Log updated cache info
+        cache_info = await get_cache_info()
+        if cache_info.get("status") == "fresh":
+            logging.info(f"Using blocks from cache (age: {cache_info.get('age_hours', 0):.1f}h)")
+        
     except Exception as e:
         logging.error(f"❌ Failed to load blocks: {e}")
         raise
