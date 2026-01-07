@@ -87,6 +87,16 @@ def get_langchain_project() -> str:
     return get_secret("LANGCHAIN_PROJECT", "autogpt-agent-builder")
 
 
+def get_autogpt_api_key() -> Optional[str]:
+    """Get AutoGPT platform API key for blocks endpoint."""
+    return get_secret("AUTOGPT_API_KEY")
+
+
+def get_autogpt_blocks_api_url() -> str:
+    """Get AutoGPT blocks API endpoint URL."""
+    return get_secret("AUTOGPT_BLOCKS_API_URL", "https://backend.agpt.co/external-api/v1/blocks")
+
+
 # Initialize environment on module import
 setup_environment()
 

@@ -5,5 +5,7 @@ langchain-chroma
 pydantic
 python-dotenv
 aiofiles
+aiohttp
 langsmith
-
+fastapi
+uvicorn[standard]
