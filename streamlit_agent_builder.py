@@ -25,6 +25,9 @@ from agent_builder import (
     update_agent_json_incrementally,
 )
 
+# Import Langfuse integration
+from langfuse_integration import is_langfuse_enabled
+
 # =============================================================================
 # ENV & CONSTANTS
 # =============================================================================
@@ -92,11 +95,22 @@ def initialize_session_state():
         'template_question_answers': {},
         'error_message': None,  # To store error messages for UI display
         'auto_mode': True,  # Auto mode for automatic execution
+        'session_id': None,  # Langfuse session ID
+        'langfuse_enabled': False,  # Track if Langfuse is enabled
     }
     
     for key, default_value in session_vars.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
+    
+    # Initialize Langfuse session ID if not already set
+    if st.session_state.session_id is None:
+        import uuid
+        st.session_state.session_id = str(uuid.uuid4())
+    
+    # Check if Langfuse is enabled
+    if not st.session_state.langfuse_enabled:
+        st.session_state.langfuse_enabled = is_langfuse_enabled()
 
 initialize_session_state()
 
@@ -277,6 +291,10 @@ def render_welcome_stage():
     render_error_message()
     st.title("🤖 AutoGPT Agent Builder")
     st.markdown("Build AI agents through natural conversation")
+    
+    # Show Langfuse status
+    if st.session_state.langfuse_enabled:
+        st.success("🔍 **Langfuse Tracing Active** - All LLM calls are being tracked for observability")
     
     st.info("🤖 **Welcome to AutoGPT Agent Builder!**")
     st.write("I'm here to help you create AI agents through natural conversation. What would you like to do?")

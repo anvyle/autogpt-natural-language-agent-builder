@@ -58,6 +58,9 @@ def setup_environment():
         "LANGCHAIN_API_KEY",
         "LANGCHAIN_TRACING",
         "LANGCHAIN_PROJECT",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_BASE_URL",
     ]
     
     for key in api_keys:
@@ -95,6 +98,26 @@ def get_autogpt_api_key() -> Optional[str]:
 def get_autogpt_blocks_api_url() -> str:
     """Get AutoGPT blocks API endpoint URL."""
     return get_secret("AUTOGPT_BLOCKS_API_URL", "https://backend.agpt.co/external-api/v1/blocks")
+
+
+def get_langfuse_secret_key() -> Optional[str]:
+    """Get Langfuse secret key."""
+    return get_secret("LANGFUSE_SECRET_KEY")
+
+
+def get_langfuse_public_key() -> Optional[str]:
+    """Get Langfuse public key."""
+    return get_secret("LANGFUSE_PUBLIC_KEY")
+
+
+def get_langfuse_base_url() -> str:
+    """Get Langfuse base URL."""
+    return get_secret("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
+
+
+def is_langfuse_enabled() -> bool:
+    """Check if Langfuse is enabled (has required keys)."""
+    return bool(get_langfuse_secret_key() and get_langfuse_public_key())
 
 
 # Initialize environment on module import

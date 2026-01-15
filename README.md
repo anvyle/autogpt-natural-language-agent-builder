@@ -9,6 +9,7 @@
 - 🔄 **Patch-Based Updates**: Surgically modify existing agents using minimal patches that preserve unchanged parts
 - 📝 **Template Modification**: Modify existing agent templates using the same patch-based system
 - ❓ **Interactive Clarification**: Handle clarifying questions for ambiguous requests
+- 🔍 **Langfuse Integration**: Comprehensive LLM tracing, evaluations, and dynamic prompt management
 
 ## Two Interfaces
 
@@ -25,6 +26,7 @@ A RESTful API for integrating agent generation into your applications.
 - Python 3.8+
 - Google API Key (for Gemini model)
 - AutoGPT Platform API Key (for fetching blocks)
+- Langfuse Account (optional, for LLM tracing and prompt management)
 
 ### Installation
 
@@ -47,6 +49,11 @@ A RESTful API for integrating agent generation into your applications.
    
    # Optional: AutoGPT Blocks API URL (defaults to v1 endpoint)
    # AUTOGPT_BLOCKS_API_URL=https://backend.agpt.co/external-api/v1/blocks
+   
+   # Optional: Langfuse Configuration (for LLM tracing and prompt management)
+   LANGFUSE_SECRET_KEY=sk-lf-your-secret-key-here
+   LANGFUSE_PUBLIC_KEY=pk-lf-your-public-key-here
+   LANGFUSE_BASE_URL=https://cloud.langfuse.com
    ```
    
    **Getting your AutoGPT API Key:**
@@ -194,7 +201,13 @@ Create a `.env` file with:
 GOOGLE_API_KEY=your_google_api_key_here
 AUTOGPT_API_KEY=your_autogpt_api_key_here
 
-# Optional
+# Optional: Langfuse for LLM observability and prompt management
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_PROJECT=autogpt-agent-generator
+
+# Optional: Other services
 AUTOGPT_BLOCKS_API_URL=https://backend.agpt.co/external-api/v1/blocks
 LANGCHAIN_API_KEY=your_langchain_api_key_here
 LANGCHAIN_TRACING=true
@@ -346,6 +359,39 @@ The patch-based system only modifies targeted parts while preserving all unchang
 - Check that port 8000 is not in use
 - Verify firewall settings
 
+## Langfuse Integration
+
+The system includes comprehensive Langfuse integration for:
+- **LLM Tracing**: Automatic tracing of all LLM calls with inputs, outputs, and metadata
+- **Evaluations**: Run evaluations over time to measure performance improvements with real data
+- **Prompt Management**: Load prompts dynamically from Langfuse with version control
+
+### Setup
+
+1. **Get Langfuse credentials** from https://cloud.langfuse.com
+2. **Add to `.env` file**:
+   ```env
+   LANGFUSE_SECRET_KEY=sk-lf-your-secret-key-here
+   LANGFUSE_PUBLIC_KEY=pk-lf-your-public-key-here
+   LANGFUSE_BASE_URL=https://cloud.langfuse.com
+   ```
+3. **Create prompts in Langfuse** with the following names:
+   - `DECOMPOSITION_PROMPT_TEMPLATE`
+   - `AGENT_GENERATION_PROMPT_TEMPLATE`
+   - `INCREMENTAL_UPDATE_SYSTEM_PROMPT_TEMPLATE`
+   - `INCREMENTAL_AGENT_UPDATE_SYSTEM_PROMPT_TEMPLATE`
+   - `PATCH_GENERATION_SYSTEM_PROMPT_TEMPLATE`
+
+For detailed setup instructions, see [LANGFUSE_SETUP.md](LANGFUSE_SETUP.md).
+
+### Features
+
+- ✅ **Automatic Tracing**: All LLM operations are automatically traced
+- ✅ **Dynamic Prompts**: Prompts loaded from Langfuse with automatic caching
+- ✅ **Fallback Support**: Gracefully falls back to hard-coded prompts if Langfuse unavailable
+- ✅ **Version Control**: Support for prompt versioning and A/B testing
+- ✅ **Performance Monitoring**: Track token usage, latency, and costs over time
+
 ## Contributing
 
 Contributions are welcome! Please:
@@ -366,6 +412,7 @@ For issues or questions:
 - [API Documentation](API_README.md) - Complete API reference
 - [Streamlit Interface Guide](streamlit_agent_builder.py) - Docstrings in code
 - [Agent Builder Logic](agent_builder.py) - Core functions documentation
+- [Langfuse Setup Guide](LANGFUSE_SETUP.md) - Complete Langfuse integration guide
 
 ## License
 
@@ -377,7 +424,12 @@ Built for AutoGPT platform by the community.
 
 ## Version History
 
-- **v1.0.0** (Current)
+- **v1.1.0** (Current)
+  - **Langfuse Integration** - Comprehensive LLM tracing, evaluations, and prompt management
+  - Dynamic prompt loading from Langfuse with version control
+  - Automatic LLM call tracing for monitoring and debugging
+  - Support for A/B testing and prompt optimization
+- **v1.0.0**
   - Initial release with Streamlit interface
   - FastAPI server implementation
   - Complete agent generation workflow
