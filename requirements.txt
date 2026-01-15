@@ -9,3 +9,4 @@ aiohttp
 langsmith
 fastapi
 uvicorn[standard]
+langfuse
