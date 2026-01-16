@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -8,6 +7,10 @@ from utils import load_json_async
 
 # Import centralized config for secrets management
 import config
+from logging_config import get_logger
+
+# Create module-specific logger
+logger = get_logger(__name__)
 
 # Environment is set up automatically by config module
 
@@ -33,7 +36,7 @@ def agent_to_document(agent):
     )
 
 async def build_agent_vector_store() -> VectorStore:
-    logging.info("🛠️ Building Chroma vector store for agents...")
+    logger.info("🛠️ Building Chroma vector store for agents...")
     agents = await load_json_async(agent_file)
     documents = [agent_to_document(agent) for agent in agents]
     store = Chroma.from_documents(
@@ -42,7 +45,7 @@ async def build_agent_vector_store() -> VectorStore:
         collection_name=agent_collection_name,
         persist_directory=persist_directory,
     )
-    logging.info("✅ Chroma vectorstore built and persisted.")
+    logger.info("✅ Chroma vectorstore built and persisted.")
     return store
 
 async def query_agent_store(query: str, k: int = 3):
@@ -65,7 +68,6 @@ async def query_agent_store(query: str, k: int = 3):
     return matched_examples
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
 
     async def main():
         await build_agent_vector_store()

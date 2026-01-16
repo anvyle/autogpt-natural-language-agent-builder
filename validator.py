@@ -1,18 +1,21 @@
 import os
 import json
-import logging
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from backend.data.integrations import Webhook
 from backend.data.graph import GraphModel
+from logging_config import get_logger
+
+# Create module-specific logger
+logger = get_logger(__name__)
 
 load_dotenv()
 
 USER_ID = os.getenv("USER_ID")
 
 def validate_agent_json(agent_json, for_run: bool = False) -> tuple[bool, str]:
-    logging.info("🔍 Validating agent JSON...")
+    logger.info("🔍 Validating agent JSON...")
     try:
         agent_json["user_id"] = USER_ID
         agent_json["nodes"] = [
@@ -22,7 +25,7 @@ def validate_agent_json(agent_json, for_run: bool = False) -> tuple[bool, str]:
         data = json.loads(agent_json) if isinstance(agent_json, str) else agent_json
         graph = GraphModel(**data)
         graph.validate_graph(for_run)
-        logging.info("✅ Agent JSON validation successful.")
+        logger.info("✅ Agent JSON validation successful.")
         return True, "OK"
     except (ValidationError, ValueError) as err:
         return False, str(err)
