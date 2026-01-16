@@ -17,12 +17,15 @@ Usage:
     prompt = get_prompt("DECOMPOSITION_PROMPT_TEMPLATE")
 """
 
-import logging
 from typing import Optional, Dict, Any, Callable
 from functools import wraps
 import asyncio
 
 import config
+from logging_config import get_logger
+
+# Create module-specific logger
+logger = get_logger(__name__)
 
 # Try to import Langfuse
 try:
@@ -30,7 +33,7 @@ try:
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False
-    logging.warning("Langfuse not available. Install with: pip install langfuse")
+    logger.warning("Langfuse not available. Install with: pip install langfuse")
 
 # =============================================================================
 # GLOBAL LANGFUSE CLIENT
@@ -44,12 +47,12 @@ def initialize_langfuse():
     global _langfuse_client, _langfuse_enabled
     
     if not LANGFUSE_AVAILABLE:
-        logging.warning("Langfuse library not available. Tracing disabled.")
+        logger.warning("Langfuse library not available. Tracing disabled.")
         _langfuse_enabled = False
         return
     
     if not config.is_langfuse_enabled():
-        logging.info("Langfuse credentials not configured. Tracing disabled.")
+        logger.info("Langfuse credentials not configured. Tracing disabled.")
         _langfuse_enabled = False
         return
     
@@ -64,9 +67,9 @@ def initialize_langfuse():
             host=base_url
         )
         _langfuse_enabled = True
-        logging.info(f"✅ Langfuse initialized successfully (base_url: {base_url})")
+        logger.info(f"✅ Langfuse initialized successfully (base_url: {base_url})")
     except Exception as e:
-        logging.error(f"❌ Failed to initialize Langfuse: {e}")
+        logger.error(f"❌ Failed to initialize Langfuse: {e}")
         _langfuse_enabled = False
 
 def is_langfuse_enabled() -> bool:
@@ -106,7 +109,7 @@ def trace_llm_call(name: str, **kwargs):
         # Use Langfuse's trace context
         return observe(name=name, **kwargs)
     except Exception as e:
-        logging.warning(f"Failed to create Langfuse trace: {e}")
+        logger.warning(f"Failed to create Langfuse trace: {e}")
         # Return no-op context on error
         class NoOpContext:
             def __enter__(self):
@@ -141,7 +144,7 @@ def trace_llm_function(name: Optional[str] = None):
                 try:
                     return await observe(name=trace_name)(func)(*args, **kwargs)
                 except Exception as e:
-                    logging.warning(f"Langfuse tracing failed for {trace_name}: {e}")
+                    logger.warning(f"Langfuse tracing failed for {trace_name}: {e}")
                     return await func(*args, **kwargs)
             return async_wrapper
         else:
@@ -150,7 +153,7 @@ def trace_llm_function(name: Optional[str] = None):
                 try:
                     return observe(name=trace_name)(func)(*args, **kwargs)
                 except Exception as e:
-                    logging.warning(f"Langfuse tracing failed for {trace_name}: {e}")
+                    logger.warning(f"Langfuse tracing failed for {trace_name}: {e}")
                     return func(*args, **kwargs)
             return sync_wrapper
     
@@ -184,7 +187,7 @@ def get_prompt(
     # If Langfuse is not enabled, use fallback
     if not _langfuse_enabled or not _langfuse_client:
         if fallback_prompt is None:
-            logging.warning(f"Langfuse disabled and no fallback provided for prompt: {prompt_name}")
+            logger.warning(f"Langfuse disabled and no fallback provided for prompt: {prompt_name}")
             return ""
         return fallback_prompt
     
@@ -192,11 +195,11 @@ def get_prompt(
         # Check cache first
         cache_key = f"{prompt_name}::{version or 'latest'}"
         if cache_key in _prompt_cache:
-            logging.debug(f"Using cached prompt: {prompt_name}")
+            logger.debug(f"Using cached prompt: {prompt_name}")
             prompt_text = _prompt_cache[cache_key]
         else:
             # Fetch from Langfuse
-            logging.info(f"Fetching prompt from Langfuse: {prompt_name} (version: {version or 'latest'})")
+            logger.info(f"Fetching prompt from Langfuse: {prompt_name} (version: {version or 'latest'})")
             
             if version:
                 prompt = _langfuse_client.get_prompt(prompt_name, version=version)
@@ -210,26 +213,26 @@ def get_prompt(
                 
                 # Cache the prompt
                 _prompt_cache[cache_key] = prompt_text
-                logging.info(f"✅ Successfully loaded prompt from Langfuse: {prompt_name}")
+                logger.info(f"✅ Successfully loaded prompt from Langfuse: {prompt_name}")
             else:
-                logging.warning(f"Prompt not found in Langfuse: {prompt_name}, using fallback")
+                logger.warning(f"Prompt not found in Langfuse: {prompt_name}, using fallback")
                 prompt_text = fallback_prompt or ""
         
         return prompt_text
         
     except Exception as e:
-        logging.error(f"❌ Error loading prompt from Langfuse ({prompt_name}): {e}")
+        logger.error(f"❌ Error loading prompt from Langfuse ({prompt_name}): {e}")
         if fallback_prompt is None:
-            logging.error(f"No fallback prompt available for: {prompt_name}")
+            logger.error(f"No fallback prompt available for: {prompt_name}")
             return ""
-        logging.info(f"Using fallback prompt for: {prompt_name}")
+        logger.info(f"Using fallback prompt for: {prompt_name}")
         return fallback_prompt
 
 def clear_prompt_cache():
     """Clear the prompt cache to force reload from Langfuse."""
     global _prompt_cache
     _prompt_cache = {}
-    logging.info("Prompt cache cleared")
+    logger.info("Prompt cache cleared")
 
 def refresh_prompt(prompt_name: str, version: Optional[int] = None) -> bool:
     """
@@ -260,13 +263,13 @@ def refresh_prompt(prompt_name: str, version: Optional[int] = None) -> bool:
                 prompt_text = str(prompt)
             
             _prompt_cache[cache_key] = prompt_text
-            logging.info(f"✅ Refreshed prompt: {prompt_name}")
+            logger.info(f"✅ Refreshed prompt: {prompt_name}")
             return True
         else:
-            logging.warning(f"Prompt not found: {prompt_name}")
+            logger.warning(f"Prompt not found: {prompt_name}")
             return False
     except Exception as e:
-        logging.error(f"❌ Error refreshing prompt {prompt_name}: {e}")
+        logger.error(f"❌ Error refreshing prompt {prompt_name}: {e}")
         return False
 
 # =============================================================================
@@ -289,7 +292,7 @@ def score_generation(
         comment: Optional comment about the score
     """
     if not _langfuse_enabled or not _langfuse_client:
-        logging.debug("Langfuse not enabled, skipping scoring")
+        logger.debug("Langfuse not enabled, skipping scoring")
         return
     
     try:
@@ -299,9 +302,9 @@ def score_generation(
             value=value,
             comment=comment
         )
-        logging.debug(f"Scored trace {trace_id}: {name}={value}")
+        logger.debug(f"Scored trace {trace_id}: {name}={value}")
     except Exception as e:
-        logging.error(f"Error scoring trace: {e}")
+        logger.error(f"Error scoring trace: {e}")
 
 # =============================================================================
 # INITIALIZATION

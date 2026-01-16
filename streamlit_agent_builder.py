@@ -28,6 +28,12 @@ from agent_builder import (
 # Import Langfuse integration
 from langfuse_integration import is_langfuse_enabled
 
+# Import logging
+from logging_config import get_logger
+
+# Create module-specific logger
+logger = get_logger(__name__)
+
 # =============================================================================
 # ENV & CONSTANTS
 # =============================================================================
@@ -56,6 +62,7 @@ st.set_page_config(
 
 def initialize_session_state():
     """Initialize all session state variables."""
+    logger.info("Initializing session state")
     session_vars = {
         'chat_messages': [],
         'current_step': "welcome",
@@ -122,9 +129,12 @@ initialize_session_state()
 def load_blocks() -> bool:
     """Load and cache blocks. Returns True if successful, False otherwise."""
     try:
+        logger.info("Loading blocks for Streamlit app")
         asyncio.run(initialize_blocks())
+        logger.info("Blocks loaded successfully")
         return True
     except Exception as e:
+        logger.error(f"Failed to load blocks: {e}")
         st.error(f"Failed to load blocks: {e}")
         return False
 

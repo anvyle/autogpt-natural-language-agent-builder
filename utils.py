@@ -1,9 +1,12 @@
 import json
-import logging
 import aiofiles
 import uuid
 import re
 from typing import Tuple, List, Dict, Any, Optional
+from logging_config import get_logger
+
+# Create module-specific logger
+logger = get_logger(__name__)
 
 async def load_json_async(file_path: str):
     async with aiofiles.open(file_path, 'r') as f:
@@ -697,7 +700,7 @@ class AgentFixer:
                     fixed_count += 1
         
         if fixed_count > 0:
-            logging.info(f"Added model parameter to {fixed_count} AI block nodes")
+            logger.info(f"Added model parameter to {fixed_count} AI block nodes")
         
         return agent
     
@@ -964,9 +967,9 @@ class AgentFixer:
             agent = await self.fix_link_static_properties(agent, blocks)
             agent = await self.fix_data_type_mismatch(agent, blocks)
         
-        logging.info(f"Applied {len(self.fixes_applied)} fixes to agent")
+        logger.info(f"Applied {len(self.fixes_applied)} fixes to agent")
         for fix in self.fixes_applied:
-            logging.warning(f"  - {fix}")
+            logger.warning(f"  - {fix}")
 
         return agent
 
@@ -1375,7 +1378,7 @@ class AgentValidator:
             - is_valid: True if agent passes all validations, False otherwise
             - error_message: Detailed error message if validation fails, None if successful
         """
-        logging.info("🔍 Validating agent...")
+        logger.info("🔍 Validating agent...")
         self.errors = []
         
         checks = [
@@ -1391,13 +1394,13 @@ class AgentValidator:
         all_passed = all(check[1] for check in checks)
         
         if all_passed:
-            logging.info("✅ Agent validation successful.")
+            logger.info("✅ Agent validation successful.")
             return True, None
         else:
             error_message = "Agent validation failed with the following errors:\n\n"
             for i, error in enumerate(self.errors, 1):
                 error_message += f"{i}. {error}\n"
             
-            logging.error(f"❌ Agent validation failed: {error_message}")
+            logger.error(f"❌ Agent validation failed: {error_message}")
             return False, error_message
 

@@ -1,6 +1,5 @@
 import json
 import re
-import logging
 from datetime import datetime
 from pathlib import Path
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,8 +9,10 @@ from utils import load_json_async, AgentFixer, AgentValidator
 import config
 from blocks_fetcher import fetch_and_cache_blocks, get_cache_info
 from langfuse_integration import trace_llm_function, get_prompt, is_langfuse_enabled
+from logging_config import get_logger
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# Create module-specific logger
+module_logger = get_logger(__name__)
 OUTPUT_DIR = Path(f"generated_agents/{datetime.now().strftime('%Y%m%d')}")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MODEL = "gemini-3-pro-preview"
@@ -144,16 +145,16 @@ async def initialize_blocks(force_refresh: bool = False):
     global _blocks, _block_summaries, _blocks_loaded
     
     if _blocks_loaded and not force_refresh:
-        logging.info("Blocks already loaded, skipping initialization")
+        module_logger.info("Blocks already loaded, skipping initialization")
         return
     
     try:
         # Log cache status
         cache_info = await get_cache_info()
-        logging.info(f"Cache status: {cache_info.get('status', 'unknown')}")
+        module_logger.info(f"Cache status: {cache_info.get('status', 'unknown')}")
         
         # Fetch blocks (from cache or API)
-        logging.info("Loading blocks...")
+        module_logger.info("Loading blocks...")
         _blocks = await fetch_and_cache_blocks(force_refresh=force_refresh)
         
         _block_summaries = [
@@ -166,15 +167,15 @@ async def initialize_blocks(force_refresh: bool = False):
             } for block in _blocks
         ]
         _blocks_loaded = True
-        logging.info(f"✅ Successfully loaded {len(_blocks)} blocks")
+        module_logger.info(f"✅ Successfully loaded {len(_blocks)} blocks")
         
         # Log updated cache info
         cache_info = await get_cache_info()
         if cache_info.get("status") == "fresh":
-            logging.info(f"Using blocks from cache (age: {cache_info.get('age_hours', 0):.1f}h)")
+            module_logger.info(f"Using blocks from cache (age: {cache_info.get('age_hours', 0):.1f}h)")
         
     except Exception as e:
-        logging.error(f"❌ Failed to load blocks: {e}")
+        module_logger.error(f"❌ Failed to load blocks: {e}")
         raise
 
 def get_blocks():
@@ -204,21 +205,21 @@ async def decompose_description(description, original_text=None, user_instructio
     Returns:
         Parsed JSON dict with instructions or None on error
     """
-    logging.info(f"Decomposing description: \n{description}\n...")
+    module_logger.info(f"Decomposing description: \n{description}\n...")
     
     # Log to Langfuse if enabled
     if is_langfuse_enabled():
-        logging.info("🔍 Langfuse tracing enabled for decompose_description")
+        module_logger.info("🔍 Langfuse tracing enabled for decompose_description")
     
     # Ensure blocks are loaded
     if not _blocks_loaded:
-        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        module_logger.error("❌ Blocks not loaded. Call initialize_blocks() first.")
         return None
     
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
 
     if original_text and user_instruction:
-        logging.info(f"Revising instructions based on user feedback...")
+        module_logger.info(f"Revising instructions based on user feedback...")
         
         # Convert original_text to string format for the prompt if it's JSON
         if isinstance(original_text, dict):
@@ -245,20 +246,20 @@ async def decompose_description(description, original_text=None, user_instructio
         try:
             response = await llm.ainvoke([HumanMessage(content=prompt)])
             if response is None:
-                logging.error("❌ No response received from LLM")
+                module_logger.error("❌ No response received from LLM")
                 return None
             
             parsed = _parse_llm_json_or_none(str(response.text))
             if parsed is None:
-                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
+                module_logger.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
                 return None
             return parsed
         except Exception as e:
-            logging.error(f"❌ Error revising instructions: {e}")
+            module_logger.error(f"❌ Error revising instructions: {e}")
             return None
 
     if original_text and retry_feedback:
-        logging.info(f"Revising instructions based on validation error: {retry_feedback}")
+        module_logger.info(f"Revising instructions based on validation error: {retry_feedback}")
         
         # Convert original_text to string format for the prompt if it's JSON
         if isinstance(original_text, dict):
@@ -288,16 +289,16 @@ async def decompose_description(description, original_text=None, user_instructio
         try:
             response = await llm.ainvoke([HumanMessage(content=prompt)])
             if response is None:
-                logging.error("❌ No response received from LLM")
+                module_logger.error("❌ No response received from LLM")
                 return None
             
             parsed = _parse_llm_json_or_none(str(response.text))
             if parsed is None:
-                logging.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
+                module_logger.error("❌ Error revising instructions: Failed to parse JSON from LLM response")
                 return None
             return parsed
         except Exception as e:
-            logging.error(f"❌ Error revising instructions: {e}")
+            module_logger.error(f"❌ Error revising instructions: {e}")
             return None
 
     prompt = get_decomposition_prompt(_block_summaries)
@@ -308,17 +309,17 @@ async def decompose_description(description, original_text=None, user_instructio
             HumanMessage(content=description)
         ])
         if response is None:
-            logging.error("❌ No response received from LLM")
+            module_logger.error("❌ No response received from LLM")
             return None
         
         parsed = _parse_llm_json_or_none(str(response.text))
         if parsed is None:
-            logging.error("❌ Error decomposing description: Failed to parse JSON from LLM response")
+            module_logger.error("❌ Error decomposing description: Failed to parse JSON from LLM response")
             return None
         return parsed
         
     except Exception as e:
-        logging.error(f"❌ Error decomposing description: {e}")
+        module_logger.error(f"❌ Error decomposing description: {e}")
         return None
 
 
@@ -334,15 +335,15 @@ async def generate_agent_json_from_subtasks(instructions):
     Returns:
         Tuple of (agent_json, error_message)
     """
-    logging.info(f"Generating agent JSON from instructions...")
+    module_logger.info(f"Generating agent JSON from instructions...")
     
     # Log to Langfuse if enabled
     if is_langfuse_enabled():
-        logging.info("🔍 Langfuse tracing enabled for generate_agent_json")
+        module_logger.info("🔍 Langfuse tracing enabled for generate_agent_json")
     
     # Ensure blocks are loaded
     if not _blocks_loaded:
-        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        module_logger.error("❌ Blocks not loaded. Call initialize_blocks() first.")
         return None, "Blocks not loaded"
 
     # Extract block names from the structured JSON format
@@ -352,7 +353,7 @@ async def generate_agent_json_from_subtasks(instructions):
     for step in steps:
         block_name = step.get("block_name")
         if block_name:
-            logging.info(f"Found block name: {block_name}")
+            module_logger.info(f"Found block name: {block_name}")
             block_names.add(block_name)
 
     used_blocks = []
@@ -386,12 +387,12 @@ async def generate_agent_json_from_subtasks(instructions):
         
         response = await llm.ainvoke(messages)
         if response is None:
-            logging.error("❌ No response received from LLM")
+            module_logger.error("❌ No response received from LLM")
             return None, "No response received from LLM"
                 
         agent_json = _parse_llm_json_or_none(str(response.text))  
         if agent_json is None:
-            logging.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
+            module_logger.error("❌ Error generating agent JSON: Failed to parse JSON from LLM response")
             return None, "Failed to parse JSON from LLM response"
         
         # Apply automatic fixes
@@ -403,8 +404,8 @@ async def generate_agent_json_from_subtasks(instructions):
         is_valid, error = validator.validate(agent_json, _blocks)
         
         if not is_valid:
-            logging.warning(f"⚠️ Initial validation failed: {error}")
-            logging.info("🔧 Attempting patch-based fix for validation errors...")
+            module_logger.warning(f"⚠️ Initial validation failed: {error}")
+            module_logger.info("🔧 Attempting patch-based fix for validation errors...")
             
             # Generate patch to fix validation errors
             patch_request = f"""Fix the following validation errors in the agent:
@@ -431,20 +432,20 @@ async def generate_agent_json_from_subtasks(instructions):
                         is_valid, error = validator.validate(fixed_agent, _blocks)
                         
                         if is_valid:
-                            logging.info("✅ Validation errors fixed with patch-based approach!")
+                            module_logger.info("✅ Validation errors fixed with patch-based approach!")
                             agent_json = fixed_agent
                         else:
-                            logging.warning(f"⚠️ Validation still failing after patch: {error}")
+                            module_logger.warning(f"⚠️ Validation still failing after patch: {error}")
                     else:
-                        logging.warning(f"⚠️ Failed to apply fix patch: {apply_error}")
+                        module_logger.warning(f"⚠️ Failed to apply fix patch: {apply_error}")
                 else:
-                    logging.warning("⚠️ Patch generation returned clarifying questions - cannot auto-fix")
+                    module_logger.warning("⚠️ Patch generation returned clarifying questions - cannot auto-fix")
             else:
-                logging.warning(f"⚠️ Failed to generate fix patch: {patch_error}")
+                module_logger.warning(f"⚠️ Failed to generate fix patch: {patch_error}")
             
             # Final validation check
             if not is_valid:
-                logging.error(f"❌ Validation failed after patch-based fix attempt: {error}")
+                module_logger.error(f"❌ Validation failed after patch-based fix attempt: {error}")
                 return None, error
 
         # Success - agent generated and validated
@@ -453,14 +454,14 @@ async def generate_agent_json_from_subtasks(instructions):
         try:
             with open(agent_json_path, "w", encoding="utf-8") as f:
                 json.dump(agent_json, f, indent=2, ensure_ascii=False)
-            logging.info(f"✅ Saved agent.json to: {agent_json_path}")
+            module_logger.info(f"✅ Saved agent.json to: {agent_json_path}")
         except Exception as e:
-            logging.error(f"❌ Failed to save agent.json: {e}")
+            module_logger.error(f"❌ Failed to save agent.json: {e}")
             
         return agent_json, None
         
     except Exception as e:
-        logging.error(f"❌ Error during agent generation: {e}")
+        module_logger.error(f"❌ Error during agent generation: {e}")
         return None, f"Error during agent generation: {e}"
 
 
@@ -480,15 +481,15 @@ async def generate_agent_patch(update_request: str, current_agent: dict):
         - {"type": "clarifying_questions", "questions": [...]} if more info needed
         - {"intent": {...}, "patches": [...]} for actual patches
     """
-    logging.info(f"Generating agent patch for request: {update_request}")
+    module_logger.info(f"Generating agent patch for request: {update_request}")
     
     # Log to Langfuse if enabled
     if is_langfuse_enabled():
-        logging.info("🔍 Langfuse tracing enabled for generate_agent_patch")
+        module_logger.info("🔍 Langfuse tracing enabled for generate_agent_patch")
     
     # Ensure blocks are loaded
     if not _blocks_loaded:
-        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        module_logger.error("❌ Blocks not loaded. Call initialize_blocks() first.")
         return None, "Blocks not loaded"
     
     llm = ChatGoogleGenerativeAI(model=MODEL, temperature=0)
@@ -520,23 +521,23 @@ async def generate_agent_patch(update_request: str, current_agent: dict):
         ])
         
         if response is None:
-            logging.error("❌ No response received from LLM")
+            module_logger.error("❌ No response received from LLM")
             return None, "No response received from LLM"
         
         result = _parse_llm_json_or_none(str(response.text))
         if result is None:
-            logging.error("❌ Error generating patch: Failed to parse JSON from LLM response")
+            module_logger.error("❌ Error generating patch: Failed to parse JSON from LLM response")
             return None, "Failed to parse JSON from LLM response"
         
         # Check if it's clarifying questions
         if isinstance(result, dict) and result.get("type") == "clarifying_questions":
-            logging.info("📋 LLM returned clarifying questions for patch generation")
+            module_logger.info("📋 LLM returned clarifying questions for patch generation")
             return result, None
         
         return result, None
         
     except Exception as e:
-        logging.error(f"❌ Error generating patch: {e}")
+        module_logger.error(f"❌ Error generating patch: {e}")
         return None, f"Error generating patch: {e}"
 
 
@@ -551,7 +552,7 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
     Returns:
         Tuple of (updated_agent, error_message)
     """
-    logging.info("Applying patch to agent...")
+    module_logger.info("Applying patch to agent...")
     
     try:
         # Deep copy to avoid mutating original
@@ -572,7 +573,7 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
                     if node['id'] == node_id:
                         # Apply changes recursively
                         _deep_update(node, changes)
-                        logging.info(f"✓ Modified node {node_id}")
+                        module_logger.info(f"✓ Modified node {node_id}")
                         break
             
             elif patch_type == 'add':
@@ -591,10 +592,10 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
                         new_node['graph_version'] = graph_version
                     
                     updated_agent['nodes'].append(new_node)
-                    logging.info(f"✓ Added node {new_node.get('id')}")
+                    module_logger.info(f"✓ Added node {new_node.get('id')}")
                 
                 updated_agent['links'].extend(new_links)
-                logging.info(f"✓ Added {len(new_links)} link(s)")
+                module_logger.info(f"✓ Added {len(new_links)} link(s)")
             
             elif patch_type == 'delete':
                 # Remove nodes and their links
@@ -613,7 +614,7 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
                     and link.get('sink_id') not in node_ids_to_delete
                 ]
                 
-                logging.info(f"✓ Deleted {len(node_ids_to_delete)} node(s)")
+                module_logger.info(f"✓ Deleted {len(node_ids_to_delete)} node(s)")
                 
                 # Handle reconnection if specified
                 reconnect = patch_item.get('reconnect')
@@ -636,7 +637,7 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
                             new_node.setdefault('metadata', {})['position'] = node.get('metadata', {}).get('position')
                         
                         updated_agent['nodes'][i] = new_node
-                        logging.info(f"✓ Replaced node {node_id}")
+                        module_logger.info(f"✓ Replaced node {node_id}")
                         break
                 
                 # Update affected links
@@ -652,7 +653,7 @@ def apply_agent_patch(current_agent: dict, patch: dict) -> tuple:
         return updated_agent, None
         
     except Exception as e:
-        logging.error(f"❌ Error applying patch: {e}")
+        module_logger.error(f"❌ Error applying patch: {e}")
         return None, f"Error applying patch: {e}"
 
 
@@ -684,15 +685,15 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
         - updated_agent_json dict if successful
         - None if failed
     """
-    logging.info(f"Updating agent incrementally with request: {update_request}")
+    module_logger.info(f"Updating agent incrementally with request: {update_request}")
     
     # Log to Langfuse if enabled
     if is_langfuse_enabled():
-        logging.info("🔍 Langfuse tracing enabled for update_agent_incrementally")
+        module_logger.info("🔍 Langfuse tracing enabled for update_agent_incrementally")
     
     # Ensure blocks are loaded
     if not _blocks_loaded:
-        logging.error("❌ Blocks not loaded. Call initialize_blocks() first.")
+        module_logger.error("❌ Blocks not loaded. Call initialize_blocks() first.")
         return None, "Blocks not loaded"
     
     try:
@@ -700,7 +701,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
         # Retry once for patch generation and application (2 total attempts)
         for attempt in range(2):
             if attempt > 0:
-                logging.info(f"🔄 Retry attempt for agent update")
+                module_logger.info(f"🔄 Retry attempt for agent update")
             
             # Step 1: Generate the patch (may return clarifying questions)
             result, error = await generate_agent_patch(
@@ -710,35 +711,35 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             
             if error:
                 if attempt < 1:
-                    logging.warning(f"⚠️ Patch generation failed: {error}. Retrying...")
+                    module_logger.warning(f"⚠️ Patch generation failed: {error}. Retrying...")
                     continue
                 return None, error
             
             if not result:
                 if attempt < 1:
-                    logging.warning(f"⚠️ No patch generated. Retrying...")
+                    module_logger.warning(f"⚠️ No patch generated. Retrying...")
                     continue
                 return None, "Failed to generate patch"
             
             # Check if LLM returned clarifying questions
             if isinstance(result, dict) and result.get("type") == "clarifying_questions":
-                logging.info("📋 Returning clarifying questions to user")
+                module_logger.info("📋 Returning clarifying questions to user")
                 return result, None
             
             # Step 2: Apply the patch
-            logging.info(f"Applying patch with {len(result.get('patches', []))} operations")
+            module_logger.info(f"Applying patch with {len(result.get('patches', []))} operations")
             updated_agent, error = apply_agent_patch(current_agent_json, result)
             
             if error:
                 if attempt < 1:
-                    logging.warning(f"⚠️ Patch application failed: {error}. Retrying...")
+                    module_logger.warning(f"⚠️ Patch application failed: {error}. Retrying...")
                     update_request = f"{update_request}\n\nPrevious attempt failed with error: {error}\nPlease fix this issue."
                     continue
                 return None, error
             
             if not updated_agent:
                 if attempt < 1:
-                    logging.warning(f"⚠️ Patch application returned no agent. Retrying...")
+                    module_logger.warning(f"⚠️ Patch application returned no agent. Retrying...")
                     continue
                 return None, "Failed to apply patch"
             
@@ -748,7 +749,7 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             
             fixes_applied = agent_fixer.get_fixes_applied()
             if fixes_applied:
-                logging.info(f"🔧 Applied {len(fixes_applied)} automatic fixes to patched agent")
+                module_logger.info(f"🔧 Applied {len(fixes_applied)} automatic fixes to patched agent")
             
             # Step 4: Validate the result
             validator = AgentValidator()
@@ -756,21 +757,21 @@ async def update_agent_json_incrementally(update_request: str, current_agent_jso
             
             if not is_valid:
                 if attempt < 1:
-                    logging.warning(f"⚠️ Validation failed: {validation_error}. Retrying with feedback...")
+                    module_logger.warning(f"⚠️ Validation failed: {validation_error}. Retrying with feedback...")
                     # Enhance update request with validation feedback for next retry
                     update_request = f"{update_request}\n\n**Validation Error from Previous Attempt:**\n{validation_error}\n\nPlease generate a patch that addresses these validation errors."
                     continue
                 return None, validation_error
             
             # Success!
-            logging.info("✅ Agent updated successfully with patch-based system")
+            module_logger.info("✅ Agent updated successfully with patch-based system")
             return updated_agent, None
         
         # Should not reach here, but just in case
         return None, "Failed to update agent after 2 attempts"
         
     except Exception as e:
-        logging.error(f"❌ Error during patch-based agent update: {e}")
+        module_logger.error(f"❌ Error during patch-based agent update: {e}")
         return None, f"Error updating agent: {e}"
 
 
