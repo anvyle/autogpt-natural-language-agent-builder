@@ -3,7 +3,7 @@ Langfuse Integration Module
 
 This module provides Langfuse integration for:
 1. Tracing all LLM usage
-2. Loading prompts dynamically from Langfuse
+2. Loading prompts dynamically from Langfuse (fetched fresh on every call)
 3. Running evals over time
 
 Usage:
@@ -13,7 +13,7 @@ Usage:
     with trace_llm_call("decompose_description", inputs={"description": desc}):
         result = await llm.ainvoke(messages)
     
-    # Load prompts from Langfuse
+    # Load prompts from Langfuse (fetched fresh every time)
     prompt = get_prompt("DECOMPOSITION_PROMPT_TEMPLATE")
 """
 
@@ -163,8 +163,6 @@ def trace_llm_function(name: Optional[str] = None):
 # PROMPT MANAGEMENT
 # =============================================================================
 
-_prompt_cache: Dict[str, str] = {}
-
 def get_prompt(
     prompt_name: str,
     fallback_prompt: Optional[str] = None,
@@ -174,6 +172,7 @@ def get_prompt(
     """
     Load a prompt from Langfuse by name with optional versioning.
     Falls back to provided fallback_prompt if Langfuse is unavailable or prompt not found.
+    Prompts are fetched fresh from Langfuse on every call (no caching).
     
     Args:
         prompt_name: Name of the prompt in Langfuse (e.g., "DECOMPOSITION_PROMPT_TEMPLATE")
@@ -192,33 +191,24 @@ def get_prompt(
         return fallback_prompt
     
     try:
-        # Check cache first
-        cache_key = f"{prompt_name}::{version or 'latest'}"
-        if cache_key in _prompt_cache:
-            logger.debug(f"Using cached prompt: {prompt_name}")
-            prompt_text = _prompt_cache[cache_key]
-        else:
-            # Fetch from Langfuse
-            logger.info(f"Fetching prompt from Langfuse: {prompt_name} (version: {version or 'latest'})")
-            
-            if version:
-                prompt = _langfuse_client.get_prompt(prompt_name, version=version)
-            else:
-                prompt = _langfuse_client.get_prompt(prompt_name)
-            
-            if prompt:
-                prompt_text = prompt.prompt
-                if variables:
-                    prompt_text = prompt.compile(**variables)
-                
-                # Cache the prompt
-                _prompt_cache[cache_key] = prompt_text
-                logger.info(f"✅ Successfully loaded prompt from Langfuse: {prompt_name}")
-            else:
-                logger.warning(f"Prompt not found in Langfuse: {prompt_name}, using fallback")
-                prompt_text = fallback_prompt or ""
+        # Fetch from Langfuse (no caching)
+        logger.info(f"Fetching prompt from Langfuse: {prompt_name} (version: {version or 'latest'})")
         
-        return prompt_text
+        if version:
+            prompt = _langfuse_client.get_prompt(prompt_name, version=version)
+        else:
+            prompt = _langfuse_client.get_prompt(prompt_name)
+        
+        if prompt:
+            prompt_text = prompt.prompt
+            if variables:
+                prompt_text = prompt.compile(**variables)
+            
+            logger.info(f"✅ Successfully loaded prompt from Langfuse: {prompt_name}")
+            return prompt_text
+        else:
+            logger.warning(f"Prompt not found in Langfuse: {prompt_name}, using fallback")
+            return fallback_prompt or ""
         
     except Exception as e:
         logger.error(f"❌ Error loading prompt from Langfuse ({prompt_name}): {e}")
@@ -227,50 +217,6 @@ def get_prompt(
             return ""
         logger.info(f"Using fallback prompt for: {prompt_name}")
         return fallback_prompt
-
-def clear_prompt_cache():
-    """Clear the prompt cache to force reload from Langfuse."""
-    global _prompt_cache
-    _prompt_cache = {}
-    logger.info("Prompt cache cleared")
-
-def refresh_prompt(prompt_name: str, version: Optional[int] = None) -> bool:
-    """
-    Force refresh a specific prompt from Langfuse.
-    
-    Args:
-        prompt_name: Name of the prompt to refresh
-        version: Optional specific version to load
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    cache_key = f"{prompt_name}::{version or 'latest'}"
-    if cache_key in _prompt_cache:
-        del _prompt_cache[cache_key]
-    
-    # Try to reload
-    try:
-        if version:
-            prompt = _langfuse_client.get_prompt(prompt_name, version=version)
-        else:
-            prompt = _langfuse_client.get_prompt(prompt_name)
-        
-        if prompt:
-            if hasattr(prompt, 'prompt'):
-                prompt_text = prompt.prompt
-            else:
-                prompt_text = str(prompt)
-            
-            _prompt_cache[cache_key] = prompt_text
-            logger.info(f"✅ Refreshed prompt: {prompt_name}")
-            return True
-        else:
-            logger.warning(f"Prompt not found: {prompt_name}")
-            return False
-    except Exception as e:
-        logger.error(f"❌ Error refreshing prompt {prompt_name}: {e}")
-        return False
 
 # =============================================================================
 # SCORING AND EVALUATION
