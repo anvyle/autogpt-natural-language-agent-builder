@@ -46,6 +46,8 @@ class AgentFixer:
         self.STORE_VALUE_BLOCK_ID = "1ff065e9-88e8-4358-9d82-8dc91f622ba9"
         self.UNIVERSAL_TYPE_CONVERTER_BLOCK_ID = "95d1b990-ce13-4d88-9737-ba5c2070c97b"
         self.GET_CURRENT_DATE_BLOCK_ID = "b29c1b50-5d0e-4d9f-8f9d-1b0e6fcbf0b1"
+        self.GMAIL_SEND_BLOCK_ID = "6c27abc2-e51d-499e-a85f-5a0041ba94f0"
+        self.TEXT_REPLACE_BLOCK_ID = "7e7c87ab-3469-4bcc-9abe-67705091b713"
         self.fixes_applied = []
     
     def is_uuid(self, value: str) -> bool:
@@ -937,6 +939,93 @@ class AgentFixer:
         
         return agent
 
+    async def fix_addtolist_gmail_self_reference(self, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Remove self-referencing links from AddToList blocks that are connected to GmailSendBlock.
+        
+        When an AddToList block has a link to a GmailSendBlock, this fixer:
+        1. Identifies the AddToList block that is linked to a GmailSendBlock
+        2. Removes the self-referencing link (updated_list -> list) from that AddToList block
+        
+        Args:
+            agent: The agent dictionary to fix
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        links = agent.get("links", [])
+        
+        # Find AddToList blocks that are connected to GmailSendBlock
+        addtolist_nodes_linked_to_gmail = set()
+        
+        for link in links:
+            source_node = next((node for node in nodes if node.get("id") == link.get("source_id")), None)
+            sink_node = next((node for node in nodes if node.get("id") == link.get("sink_id")), None)
+            
+            # Check if AddToList block is linked to GmailSendBlock
+            if (source_node and sink_node and
+                source_node.get("block_id") == self.ADDTOLIST_BLOCK_ID and
+                sink_node.get("block_id") == self.GMAIL_SEND_BLOCK_ID):
+                addtolist_nodes_linked_to_gmail.add(source_node.get("id"))
+                self.add_fix_log(
+                    f"Identified AddToList block {source_node.get('id')} linked to GmailSendBlock {sink_node.get('id')}"
+                )
+        
+        # Remove self-referencing links from identified AddToList blocks
+        if addtolist_nodes_linked_to_gmail:
+            links_to_remove = []
+            
+            for link in links:
+                # Check if this is a self-referencing link from an AddToList block linked to Gmail
+                if (link.get("source_id") in addtolist_nodes_linked_to_gmail and
+                    link.get("sink_id") in addtolist_nodes_linked_to_gmail and
+                    link.get("source_id") == link.get("sink_id") and
+                    link.get("source_name") == "updated_list" and
+                    link.get("sink_name") == "list"):
+                    links_to_remove.append(link)
+                    self.add_fix_log(
+                        f"Removed self-referencing link {link.get('id')} from AddToList block {link.get('source_id')} "
+                        f"(linked to GmailSendBlock)"
+                    )
+            
+            # Update links by removing self-referencing links
+            if links_to_remove:
+                agent["links"] = [link for link in links if link not in links_to_remove]
+        
+        return agent
+
+    async def fix_text_replace_new_parameter(self, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fix TextReplaceBlock's 'new' parameter by changing empty string to space.
+        
+        When a TextReplaceBlock node has an empty string ("") in its 'new' parameter
+        within input_default, this fixer changes it to a space (" ").
+        
+        Args:
+            agent: The agent dictionary to fix
+            
+        Returns:
+            The fixed agent dictionary
+        """
+        nodes = agent.get("nodes", [])
+        
+        for node in nodes:
+            if node.get("block_id") == self.TEXT_REPLACE_BLOCK_ID:
+                node_id = node.get("id")
+                input_default = node.get("input_default", {})
+                
+                # Check if 'new' parameter exists and is an empty string
+                if "new" in input_default and input_default["new"] == "":
+                    old_value = input_default["new"]
+                    input_default["new"] = " "
+                    self.add_fix_log(
+                        f"Fixed TextReplaceBlock {node_id} 'new' parameter: "
+                        f"empty string (\"\") -> space (\" \")"
+                    )
+        
+        return agent
+
     async def apply_all_fixes(self, agent: Dict[str, Any], blocks: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Apply all available fixes to the agent.
@@ -955,9 +1044,11 @@ class AgentFixer:
         agent = await self.fix_double_curly_braces(agent)
         agent = await self.fix_storevalue_before_condition(agent)
         agent = await self.fix_addtolist_blocks(agent)
+        agent = await self.fix_addtolist_gmail_self_reference(agent)
         agent = await self.fix_addtodictionary_blocks(agent)
         agent = await self.fix_code_execution_output(agent)
         agent = await self.fix_data_sampling_sample_size(agent)
+        agent = await self.fix_text_replace_new_parameter(agent)
         agent = await self.fix_node_x_coordinates(agent)
         agent = await self.fix_getcurrentdate_offset(agent)
         
